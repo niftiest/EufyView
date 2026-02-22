@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0f0f0f">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>EufyView</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icon-192.svg">
+    <link rel="apple-touch-icon" href="icon-192.svg">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Top bar -->
+    <header id="header">
+        <h1>EufyView</h1>
+        <div id="header-actions">
+            <span id="connection-dot" class="dot disconnected"></span>
+            <button id="timeline-btn" class="btn-icon hidden" title="Events">&#128276;</button>
+            <button id="health-btn" class="btn-icon hidden" title="Health">&#10084;</button>
+            <button id="settings-btn" title="Settings">&#9881;</button>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <main id="app">
+        <!-- Camera grid (shown when connected) -->
+        <section id="cameras-screen" class="screen active">
+            <div id="camera-grid"></div>
+        </section>
+
+        <!-- Event Timeline -->
+        <section id="timeline-screen" class="screen">
+            <div id="timeline-header">
+                <button id="timeline-back" class="btn-icon">&larr;</button>
+                <span>Events</span>
+                <button id="timeline-clear" class="btn-icon" title="Clear">&#128465;</button>
+            </div>
+            <div id="timeline-list"></div>
+            <div id="timeline-empty">
+                <p>No events yet</p>
+            </div>
+        </section>
+
+        <!-- Camera Health Dashboard -->
+        <section id="health-screen" class="screen">
+            <div id="health-header">
+                <button id="health-back" class="btn-icon">&larr;</button>
+                <span>Camera Health</span>
+            </div>
+            <div id="health-list"></div>
+        </section>
+
+        <!-- Live view (shown when watching a camera) -->
+        <section id="live-screen" class="screen">
+            <div id="live-header">
+                <button id="live-back" class="btn-icon">&larr;</button>
+                <span id="live-title">Camera</span>
+                <span id="live-buffer"></span>
+            </div>
+            <div id="live-container">
+                <video id="live-video" playsinline autoplay muted></video>
+                <div id="live-error" class="hidden"></div>
+                <div id="live-loading" class="hidden">
+                    <div class="spinner"></div>
+                    <span>Connecting to camera...</span>
+                </div>
+            </div>
+            <div id="live-controls">
+                <button id="live-mute-btn" class="btn-icon" title="Unmute">&#128263;</button>
+                <button id="live-fullscreen-btn" class="btn-icon" title="Fullscreen">&#x26F6;</button>
+                <button id="live-pip-btn" class="btn-icon hidden" title="Picture in Picture">&#128250;</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings modal -->
+    <div id="settings-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="settings-close" class="btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3>Notifications</h3>
+                <div id="notif-toggles"></div>
+                <h3>Video</h3>
+                <label>Scale
+                    <select id="cfg-scale">
+                        <option value="">Original</option>
+                        <option value="1280:-2">720p</option>
+                        <option value="1920:-2">1080p</option>
+                        <option value="640:-2">360p</option>
+                    </select>
+                </label>
+                <label>Quality (CRF)
+                    <input type="range" id="cfg-crf" min="18" max="35" value="23">
+                    <span id="cfg-crf-val">23</span>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button id="settings-save" class="btn-primary">Save</button>
+                <button id="settings-cancel" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Captcha modal -->
+    <div id="captcha-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header"><h2>Captcha Required</h2></div>
+            <div class="modal-body">
+                <p>Eufy requires a captcha to verify your login.</p>
+                <img id="captcha-img" alt="captcha">
+                <input type="text" id="captcha-input" placeholder="Enter captcha text">
+            </div>
+            <div class="modal-footer">
+                <button id="captcha-submit" class="btn-primary">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

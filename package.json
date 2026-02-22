@@ -1,0 +1,19 @@
+{
+  "name": "eufy-view",
+  "version": "0.1.0",
+  "description": "Mobile-first Eufy Security camera viewer using eufy-security-client for P2P livestreaming",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "node main.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "eufy-security-client": "^3.7.2",
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
