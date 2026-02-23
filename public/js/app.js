@@ -846,6 +846,10 @@ function cleanupSwipeGestures() {
 
 function onSwipeTouchStart(e) {
     if (e.touches.length !== 1 || zoomScale > 1) return;
+    // Don't interfere with back button or other UI controls
+    if (isTargetBackButton(e.target) || e.target.closest('#live-header') || e.target.closest('#live-controls')) {
+        return;
+    }
     const touch = e.touches[0];
     swipeTouchId = touch.identifier;
     swipeStartX = touch.clientX;
@@ -1241,6 +1245,12 @@ function setupZoomGestures() {
     container.addEventListener('touchend', onZoomTouchEnd, { passive: false });
 }
 
+function isTargetBackButton(target) {
+    // Check if the touch/click target is the back button or its children
+    const backBtn = document.getElementById('live-back');
+    return backBtn && (target === backBtn || backBtn.contains(target));
+}
+
 function cleanupZoomGestures() {
     const container = document.getElementById('live-container');
     container.removeEventListener('touchstart', onZoomTouchStart);
@@ -1249,6 +1259,10 @@ function cleanupZoomGestures() {
 }
 
 function onZoomTouchStart(e) {
+    // Don't interfere with back button or other UI controls
+    if (isTargetBackButton(e.target) || e.target.closest('#live-header') || e.target.closest('#live-controls')) {
+        return;
+    }
     if (e.touches.length === 2) {
         // Pinch start
         isPinching = true;

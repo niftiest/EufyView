@@ -278,6 +278,9 @@ html, body {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     z-index: 5;
+    position: relative;
+    pointer-events: auto;
+    touch-action: auto;
 }
 
 #live-back {
@@ -288,6 +291,8 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: auto;
+    touch-action: auto;
 }
 
 #live-title {
@@ -364,10 +369,15 @@ html, body {
     gap: 24px;
     padding: 12px;
     background: rgba(0,0,0,0.8);
+    position: relative;
+    pointer-events: auto;
+    touch-action: auto;
 }
 
 #live-controls .btn-icon {
     font-size: 28px;
+    pointer-events: auto;
+    touch-action: auto;
 }
 
 /* ---- Overlays / Modals ---- */

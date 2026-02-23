@@ -2,7 +2,7 @@
 ; Builds a standalone installer bundling Node.js portable + FFmpeg + Tailscale MSI + Cloudflare Tunnel
 
 #define MyAppName "EufyView"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppPublisher "EufyView"
 #define MyAppURL "https://github.com/your-repo/eufyview"
 
