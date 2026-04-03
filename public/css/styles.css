@@ -89,6 +89,12 @@ html, body {
 .btn-icon:active {
     background: var(--surface-2);
 }
+.btn-icon.busy {
+    color: var(--primary);
+    font-size: 13px;
+    min-width: 38px;
+    animation: pulse 1s infinite;
+}
 
 .btn-primary {
     background: var(--primary);
@@ -541,6 +547,46 @@ html, body {
     background: var(--primary);
     border-color: var(--primary);
 }
+
+/* ---- PTZ D-Pad ---- */
+.ptz-dpad {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 120px;
+    height: 120px;
+    z-index: 6;
+    pointer-events: none;
+}
+
+.dpad-btn {
+    position: absolute;
+    width: 38px;
+    height: 38px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 16px;
+    cursor: pointer;
+    pointer-events: auto;
+    touch-action: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.dpad-btn:active {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.dpad-up    { top: 0;   left: 50%; transform: translateX(-50%); }
+.dpad-down  { bottom: 0; left: 50%; transform: translateX(-50%); }
+.dpad-left  { top: 50%; left: 0;   transform: translateY(-50%); }
+.dpad-right { top: 50%; right: 0;  transform: translateY(-50%); }
 
 /* ---- Notification Toggles ---- */
 .notif-group-label {

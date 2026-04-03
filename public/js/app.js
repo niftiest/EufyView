@@ -32,6 +32,9 @@ let talkbackActive = false;
 let talkbackAudioCtx = null;
 let talkbackMicStream = null;
 
+// Snapshot-all state
+let snapshotAllInProgress = false;
+
 // Swipe gesture state
 let swipeTouchId = null;
 let swipeStartX = 0;
@@ -121,6 +124,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         showScreen('cameras-screen');
     });
     document.getElementById('timeline-clear').addEventListener('click', clearTimeline);
+
+    // Snapshot all button
+    document.getElementById('snapshot-all-btn').addEventListener('click', startSnapshotAll);
 
     // Health button
     document.getElementById('health-btn').addEventListener('click', showHealthDashboard);
@@ -248,6 +254,7 @@ function handleResult(msg) {
 
                 showScreen('cameras-screen');
                 renderCameraGrid();
+                document.getElementById('snapshot-all-btn').classList.remove('hidden');
                 document.getElementById('timeline-btn').classList.remove('hidden');
                 document.getElementById('health-btn').classList.remove('hidden');
             } else {
@@ -303,9 +310,9 @@ function handleResult(msg) {
                 if (devices[sn]) {
                     devices[sn].canStream = cmds.includes('deviceStartLivestream');
                     devices[sn].canAlarm = cmds.includes('triggerDeviceAlarmSound');
-                    devices[sn].canTalkback = cmds.includes('startTalkback');
-                    devices[sn].canPanTilt = cmds.includes('panAndTilt');
-                    devices[sn].canPresetPosition = cmds.includes('presetPosition');
+                    devices[sn].canTalkback = cmds.includes('deviceStartTalkback');
+                    devices[sn].canPanTilt = cmds.includes('devicePanAndTilt');
+                    devices[sn].canPresetPosition = cmds.includes('devicePresetPosition');
                 }
                 renderCameraGrid();
             }
@@ -340,6 +347,20 @@ function handleEvent(msg) {
         case 'eufy reconnected':
             // Server reconnected to Eufy — re-request device data
             wsSend({ command: 'start_listening', messageId: 'start_listening' });
+            break;
+
+        case 'snapshot_all_start':
+            snapshotAllInProgress = true;
+            updateSnapshotAllButton(0, evt.total);
+            break;
+
+        case 'snapshot_all_progress':
+            updateSnapshotAllButton(evt.completed, evt.total);
+            break;
+
+        case 'snapshot_all_done':
+            snapshotAllInProgress = false;
+            updateSnapshotAllButton();
             break;
 
         case 'eufy reconnecting':
@@ -467,18 +488,50 @@ function renderCameraGrid() {
 
         // Update thumbnail if picture data is available
         const thumb = card.querySelector('.camera-thumb');
-        if (devices[sn].picture?.data?.data && !thumb.querySelector('img')) {
+        if (devices[sn].picture?.data?.data) {
             try {
                 const pic = devices[sn].picture;
                 const mime = pic.type?.mime || 'image/jpeg';
                 const blob = new Blob([new Uint8Array(pic.data.data)], { type: mime });
-                const img = document.createElement('img');
-                img.src = URL.createObjectURL(blob);
-                thumb.innerHTML = '';
-                thumb.appendChild(img);
+                const existingImg = thumb.querySelector('img');
+                if (existingImg) {
+                    // Revoke old blob URL and update src
+                    URL.revokeObjectURL(existingImg.src);
+                    existingImg.src = URL.createObjectURL(blob);
+                } else {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(blob);
+                    thumb.innerHTML = '';
+                    thumb.appendChild(img);
+                }
             } catch (e) { /* keep placeholder */ }
         }
     });
+}
+
+// ============================================================================
+// Snapshot All
+// ============================================================================
+
+function startSnapshotAll() {
+    if (snapshotAllInProgress) return;
+    if (isStreaming) return; // Don't interrupt an active live view
+    snapshotAllInProgress = true;
+    updateSnapshotAllButton(0, 0);
+    wsSend({ command: 'snapshot_all', messageId: 'snapshot_all' });
+}
+
+function updateSnapshotAllButton(completed, total) {
+    const btn = document.getElementById('snapshot-all-btn');
+    if (snapshotAllInProgress) {
+        btn.classList.add('busy');
+        btn.disabled = true;
+        btn.innerHTML = total > 0 ? `${completed}/${total}` : '...';
+    } else {
+        btn.classList.remove('busy');
+        btn.disabled = false;
+        btn.innerHTML = '&#128247;';
+    }
 }
 
 // ============================================================================
@@ -770,12 +823,17 @@ function renderLiveControls() {
 
     // Preset position pills
     renderPresetPills();
+
+    // Pan/tilt D-pad
+    renderPanTiltPad();
 }
 
 function cleanupLiveControls() {
     document.querySelectorAll('.dynamic-ctrl').forEach(el => el.remove());
     const pills = document.querySelector('.preset-pills');
     if (pills) pills.remove();
+    const dpad = document.querySelector('.ptz-dpad');
+    if (dpad) dpad.remove();
 }
 
 function updateLiveControls() {
@@ -931,6 +989,36 @@ function renderPresetPills() {
     }
 
     container.appendChild(pills);
+}
+
+function renderPanTiltPad() {
+    const dev = devices[currentDeviceSN];
+    if (!dev?.canPanTilt) return;
+
+    const container = document.getElementById('live-container');
+    const pad = document.createElement('div');
+    pad.className = 'ptz-dpad';
+
+    // Directions: 1=LEFT, 2=RIGHT, 3=UP, 4=DOWN
+    const dirs = [
+        { dir: 3, label: '\u25B2', cls: 'dpad-up' },
+        { dir: 1, label: '\u25C0', cls: 'dpad-left' },
+        { dir: 2, label: '\u25B6', cls: 'dpad-right' },
+        { dir: 4, label: '\u25BC', cls: 'dpad-down' },
+    ];
+
+    dirs.forEach(({ dir, label, cls }) => {
+        const btn = document.createElement('button');
+        btn.className = 'dpad-btn ' + cls;
+        btn.textContent = label;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            wsSend({ command: 'device.pan_and_tilt', serialNumber: currentDeviceSN, direction: dir });
+        });
+        pad.appendChild(btn);
+    });
+
+    container.appendChild(pad);
 }
 
 // ============================================================================

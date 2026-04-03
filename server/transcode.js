@@ -141,6 +141,7 @@ function startTranscoding() {
     initSegment = null;
     isCapturingInit = true;
     lastKeyframeSegment = null;
+    lastSnapshotBuffer = null;
     segmentCounter = 0;
     segmentSizes = [];
     largestSegmentSize = 0;
@@ -543,6 +544,7 @@ module.exports = {
     handleAudioData,
     clearMetadata,
     getLatestSnapshot,
+    saveSnapshotToDisk,
 
     // Event emitter for snapshot notifications
     event: ev,

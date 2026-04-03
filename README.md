@@ -25,7 +25,8 @@ With Tailscale or Cloudflare Tunnel, no ports are exposed to the public internet
 - **Spotlight toggle** - Turn camera spotlights on/off
 - **Siren control** - Trigger alarm sounds remotely
 - **Push-to-talk** - Two-way audio via WebSocket + microphone
-- **PTZ controls** - Swipe gestures for pan/tilt cameras, preset position pills
+- **Snapshot all** - One-tap button to capture fresh thumbnails from every camera
+- **PTZ controls** - D-pad overlay and swipe gestures for pan/tilt cameras, preset position pills
 - **Pinch-to-zoom** - Zoom and pan on live video with double-tap reset
 - **Picture-in-Picture** - Continue watching while using other apps
 - **Fullscreen mode** - Immersive live viewing

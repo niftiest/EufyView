@@ -1006,6 +1006,76 @@ async function stopStreamForDevice(serialNumber) {
 }
 
 /**
+ * Capture Snapshot for Device
+ * Starts a brief livestream, waits for a keyframe to be captured, then stops.
+ * The existing snapshotSaved event chain handles saving and broadcasting.
+ * @param {string} serialNumber - Device serial number
+ * @returns {Promise<void>}
+ */
+async function captureSnapshotForDevice(serialNumber) {
+    const device = await eufyClient.getDevice(serialNumber);
+    const station = await eufyClient.getStation(device.getStationSerial());
+
+    // Stop any existing stream first
+    if (currentStreamingSN && currentStreamingSN !== serialNumber) {
+        await stopStreamForDevice(currentStreamingSN);
+        transcode.stopTranscoding();
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Start the stream
+    transcode.currentDevice = serialNumber;
+    station.startLivestream(device);
+    currentStreamingSN = serialNumber;
+    utils.log(`📸 Snapshot capture: starting stream for ${device.getName()} (${serialNumber})`, 'info');
+
+    // Wait for a keyframe snapshot buffer to be captured (poll every 500ms, timeout 20s)
+    await new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const check = setInterval(() => {
+            if (transcode.getLatestSnapshot() !== null) {
+                clearInterval(check);
+                resolve();
+            } else if (Date.now() - startTime > 20000) {
+                clearInterval(check);
+                reject(new Error('Timed out waiting for keyframe'));
+            }
+        }, 500);
+    });
+
+    utils.log(`📸 Snapshot capture: keyframe captured for ${serialNumber}, saving...`, 'info');
+
+    // Save snapshot explicitly BEFORE stopping transcoding,
+    // since the FFmpeg close handler may race with state cleanup
+    transcode.saveSnapshotToDisk();
+
+    // Wait for the snapshot to be saved to disk
+    await new Promise((resolve) => {
+        const onSaved = (deviceSN) => {
+            if (deviceSN === serialNumber) {
+                transcode.event.removeListener('snapshotSaved', onSaved);
+                clearTimeout(timeout);
+                resolve();
+            }
+        };
+        const timeout = setTimeout(() => {
+            transcode.event.removeListener('snapshotSaved', onSaved);
+            utils.log(`⚠️ Snapshot save timed out for ${serialNumber}`, 'warn');
+            resolve();
+        }, 10000);
+        transcode.event.on('snapshotSaved', onSaved);
+    });
+
+    // Now stop the stream and transcoding
+    station.stopLivestream(device);
+    currentStreamingSN = null;
+    transcode.stopTranscoding();
+
+    // Brief delay before starting next camera
+    await new Promise(r => setTimeout(r, 1500));
+}
+
+/**
  * Register WebSocket Handlers
  * Registers all WebSocket API command handlers for client communication
  * Prevents duplicate registration
@@ -1351,6 +1421,59 @@ function registerWebSocketHandlers() {
             return { type: "result", success: false, messageId: "device.stop_talkback", errorCode: error.message };
         }
         return { type: "result", success: true, messageId: "device.stop_talkback", result: { async: true } };
+    });
+
+    /**
+     * snapshot_all Command
+     * Sequentially streams each camera briefly to capture a fresh snapshot.
+     * Broadcasts progress events as each camera completes.
+     */
+    wsApi.registerMessageHandler('snapshot_all', async (message, ws) => {
+        if (!isConnected()) { ws.close(); return; }
+
+        // Get streamable device serial numbers
+        const deviceSNs = [];
+        for (const device of devices) {
+            try {
+                const cmds = device.getCommands();
+                if (cmds.includes('deviceStartLivestream')) {
+                    deviceSNs.push(device.getSerial());
+                }
+            } catch (e) {}
+        }
+
+        if (deviceSNs.length === 0) {
+            return { type: 'result', messageId: 'snapshot_all', success: false, errorCode: 'No streamable cameras found' };
+        }
+
+        // Broadcast start event
+        wsApi.wsBroadcast({
+            type: 'event',
+            event: { source: 'system', event: 'snapshot_all_start', total: deviceSNs.length }
+        });
+
+        // Process each camera sequentially
+        let completed = 0;
+        for (const sn of deviceSNs) {
+            try {
+                await captureSnapshotForDevice(sn);
+            } catch (err) {
+                utils.log(`❌ Snapshot failed for ${sn}: ${err.message}`, 'error');
+            }
+            completed++;
+            wsApi.wsBroadcast({
+                type: 'event',
+                event: { source: 'system', event: 'snapshot_all_progress', completed, total: deviceSNs.length, serialNumber: sn }
+            });
+        }
+
+        // Broadcast completion
+        wsApi.wsBroadcast({
+            type: 'event',
+            event: { source: 'system', event: 'snapshot_all_done', total: deviceSNs.length }
+        });
+
+        return { type: 'result', messageId: 'snapshot_all', success: true, result: { count: deviceSNs.length } };
     });
 
     // Register binary message handler for talkback audio data
