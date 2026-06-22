@@ -11,6 +11,7 @@
  */
 
 const utils = require('./utils');
+const auth = require('./auth');
 
 const { WebSocketServer } = require('ws');
 const eufyVersion = require('eufy-security-client/package.json').version;
@@ -36,6 +37,13 @@ function initWebSocketServer(httpServer, port) {
     // Handle WebSocket upgrade requests
     httpServer.on('upgrade', (request, socket, head) => {
         const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+
+        // Reject unauthenticated WebSocket upgrades (OAuth session cookie required)
+        if (!auth.isAuthedCookieHeader(request.headers.cookie)) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+        }
 
         // Only upgrade connections to /api endpoint
         if (pathname === '/api') {

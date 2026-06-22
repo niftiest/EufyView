@@ -11,3 +11,6 @@ installer/build-cache/
 installer/dist/
 installer/EufyViewTray.exe
 installer/tray-icon.ico
+
+# Auth secrets (Google OAuth client + session secret)
+auth.json

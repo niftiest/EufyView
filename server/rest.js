@@ -16,6 +16,8 @@ const utils = require('./utils');
 const eufy = require('./eufy-client');
 const transcode = require('./transcode');
 const wsApi = require('./ws-api');
+const push = require('./push');
+const auth = require('./auth');
 
 // Directory for static files (HTML, CSS, JS)
 const STATIC_DIR = process.env.STATIC_DIR || path.join(require.main.path, 'public');
@@ -27,6 +29,80 @@ const PORT = parseInt(process.env.PORT, 10) || 3001;
 let currentDevice = null;
 let gracePeriodTimer = null;
 let deviceReleaseTimer = null;
+
+// Frame view (Data Saver) state
+let frameStreamDevice = null;          // Device currently in MJPEG frame mode
+let lastFrameRequestTime = 0;          // Timestamp of the last /frame request
+let frameWatchdog = null;              // Idle watchdog interval
+const FRAME_IDLE_MS = 8000;            // Stop frame stream after this long with no requests
+
+/**
+ * Tear Down fMP4 Stream
+ * Ends all HTTP streaming clients and stops the Eufy livestream + transcoding.
+ * Used when switching to frame mode (the two are mutually exclusive).
+ */
+async function teardownMp4Stream() {
+    for (const client of utils.getActiveStreamClients()) {
+        client.active = false;
+        try { client.response.end(); } catch (e) { /* ignore */ }
+    }
+    utils.clearActiveStreamClients();
+    if (currentDevice) {
+        await eufy.stopStreamForDevice(currentDevice);
+    }
+    transcode.stopTranscoding();
+    currentDevice = null;
+}
+
+/**
+ * Tear Down Frame Stream
+ * Stops the MJPEG frame pipeline and its idle watchdog.
+ */
+function teardownFrameStream() {
+    if (frameWatchdog) { clearInterval(frameWatchdog); frameWatchdog = null; }
+    if (frameStreamDevice || transcode.isFrameMode) {
+        eufy.stopFrameStream();
+        frameStreamDevice = null;
+    }
+}
+
+/**
+ * Ensure Frame Stream
+ * Makes sure the MJPEG frame pipeline is running for the requested device,
+ * switching away from any active fMP4 stream or other frame device first.
+ * @param {string} sn - Device serial number
+ */
+async function ensureFrameStream(sn) {
+    if (frameStreamDevice === sn && transcode.isFrameMode) return;
+
+    // Stop any active fMP4 stream (mutually exclusive with frame mode)
+    if (currentDevice) {
+        await teardownMp4Stream();
+    }
+    // Stop a frame stream for a different device
+    if (frameStreamDevice && frameStreamDevice !== sn) {
+        await eufy.stopFrameStream();
+    }
+
+    frameStreamDevice = sn;
+    await eufy.startFrameStreamForDevice(sn);
+    startFrameWatchdog();
+}
+
+/**
+ * Start Frame Watchdog
+ * Polls for inactivity and tears down the frame stream once clients stop
+ * requesting frames (covers the case where the client crashes/loses network).
+ */
+function startFrameWatchdog() {
+    if (frameWatchdog) return;
+    frameWatchdog = setInterval(() => {
+        if (frameStreamDevice && Date.now() - lastFrameRequestTime > FRAME_IDLE_MS) {
+            utils.log(`🖼️ Frame stream idle, stopping ${frameStreamDevice}`, 'info');
+            teardownFrameStream();
+        }
+    }, 2000);
+}
 
 /**
  * Initialize REST API Server
@@ -46,6 +122,9 @@ function initRestServer() {
         res.header('Access-Control-Allow-Headers', 'Content-Type, Range');
         next();
     });
+
+    // Google OAuth gate — must run before any content routes
+    auth.installAuth(app);
 
     /**
      * fMP4 Live Stream Endpoint
@@ -68,6 +147,12 @@ function initRestServer() {
         // Cancel any pending grace period timers from previous disconnects
         if (gracePeriodTimer) { clearTimeout(gracePeriodTimer); gracePeriodTimer = null; }
         if (deviceReleaseTimer) { clearTimeout(deviceReleaseTimer); deviceReleaseTimer = null; }
+
+        // Frame mode and fMP4 streaming are mutually exclusive — stop frame mode first
+        if (frameStreamDevice || transcode.isFrameMode) {
+            teardownFrameStream();
+            await new Promise(r => setTimeout(r, 500));  // let P2P settle before re-requesting
+        }
 
         // If a different device is streaming, stop it first and switch
         if (currentDevice && currentDevice !== requestedDevice) {
@@ -225,6 +310,133 @@ function initRestServer() {
     });
 
     /**
+     * Frame View Stop Endpoint (Data Saver)
+     * Route: GET /frame/stop
+     * Explicitly stops the active frame stream (called when the client leaves
+     * the view, so we don't wait for the idle watchdog).
+     * NOTE: must be registered before the parameterised frame route below.
+     */
+    app.get('/frame/stop', (req, res) => {
+        teardownFrameStream();
+        res.json({ stopped: true });
+    });
+
+    /**
+     * Frame View Endpoint (Data Saver)
+     * Route: GET /frame/:serialNumber.jpg
+     *
+     * Returns a single JPEG frame from the camera. The client polls this to
+     * produce a low-bandwidth "stream" made of discrete image requests — looks
+     * like normal web browsing rather than media streaming, and uses far less
+     * data (useful on restricted/metered WiFi).
+     *
+     * Supports conditional requests via ETag: if the client already has the
+     * latest frame (If-None-Match matches), the request long-polls for up to
+     * 5s waiting for the next frame, then returns 304 — so no bytes are wasted
+     * re-sending an unchanged frame and round-trips stay minimal.
+     */
+    app.get('/frame/:serialNumber.jpg', async (req, res) => {
+        const sn = req.params.serialNumber;
+
+        if (!/^[A-Z0-9]+$/i.test(sn)) {
+            return res.status(400).json({ error: 'Invalid serial number format' });
+        }
+
+        // Make sure the frame pipeline is running for this device
+        try {
+            await ensureFrameStream(sn);
+        } catch (e) {
+            utils.log(`❌ Failed to start frame stream for ${sn}: ${e.message}`, 'error');
+            return res.status(500).json({ error: 'Failed to start frame stream' });
+        }
+        lastFrameRequestTime = Date.now();
+
+        // Send the current frame with caching/ETag headers
+        const sendFrame = () => {
+            const frame = transcode.getLatestFrame();
+            if (!frame) {
+                res.status(503).end();  // not ready yet — client will retry
+                return;
+            }
+            res.writeHead(200, {
+                'Content-Type': 'image/jpeg',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'ETag': transcode.frameEtag,
+                'Content-Length': frame.length
+            });
+            res.end(frame);
+        };
+
+        const clientEtag = req.headers['if-none-match'];
+        const haveFrame = transcode.getLatestFrame() !== null;
+
+        // Client is up to date — long-poll for the next frame
+        if (haveFrame && clientEtag && clientEtag === transcode.frameEtag) {
+            let settled = false;
+            const onFrame = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                req.removeListener('close', onClose);
+                sendFrame();
+            };
+            const onClose = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                transcode.event.removeListener('frame', onFrame);
+            };
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                transcode.event.removeListener('frame', onFrame);
+                req.removeListener('close', onClose);
+                res.status(304).end();
+            }, 5000);
+            transcode.event.once('frame', onFrame);
+            req.on('close', onClose);
+            return;
+        }
+
+        sendFrame();
+    });
+
+    /**
+     * Web Push: VAPID public key
+     * Route: GET /push/key
+     */
+    app.get('/push/key', (req, res) => {
+        res.json({ publicKey: push.getPublicKey() });
+    });
+
+    /**
+     * Web Push: subscribe
+     * Route: POST /push/subscribe  Body: { subscription, prefs, mutes }
+     */
+    app.post('/push/subscribe', (req, res) => {
+        const ok = push.addSubscription(req.body.subscription, req.body.prefs, req.body.mutes);
+        res.json({ success: ok });
+    });
+
+    /**
+     * Web Push: update per-camera preferences / temporary mutes
+     * Route: POST /push/prefs  Body: { endpoint, prefs, mutes }
+     */
+    app.post('/push/prefs', (req, res) => {
+        const ok = push.updatePrefs(req.body.endpoint, req.body.prefs, req.body.mutes);
+        res.json({ success: ok });
+    });
+
+    /**
+     * Web Push: unsubscribe
+     * Route: POST /push/unsubscribe  Body: { endpoint }
+     */
+    app.post('/push/unsubscribe', (req, res) => {
+        const ok = push.removeSubscription(req.body.endpoint);
+        res.json({ success: ok });
+    });
+
+    /**
      * Configuration GET Endpoint
      * Route: GET /config
      * Returns current server configuration
@@ -244,7 +456,7 @@ function initRestServer() {
         utils.log(`📝 Config update requested: ${JSON.stringify(newConfig)}`, 'debug');
 
         // Whitelist of allowed configuration keys for security
-        const allowedKeys = ['EUFY_CONFIG', 'TRANSCODING_PRESET', 'TRANSCODING_CRF', 'VIDEO_SCALE', 'FFMPEG_THREADS', 'FFMPEG_SHORT_KEYFRAMES'];
+        const allowedKeys = ['EUFY_CONFIG', 'TRANSCODING_PRESET', 'TRANSCODING_CRF', 'VIDEO_SCALE', 'FFMPEG_THREADS', 'FFMPEG_SHORT_KEYFRAMES', 'FRAME_FPS', 'FRAME_SCALE', 'FRAME_QUALITY'];
         const updatedFields = [];
 
         let CONFIG = utils.loadConfig();
@@ -322,7 +534,9 @@ function initRestServer() {
             currentDevice: currentDevice,
             transcodeScale: transcode.videoScale,
             hasInitSegment: transcode.hasInitSegment,
-            hasKeyframeSegment: transcode.hasKeyframeSegment
+            hasKeyframeSegment: transcode.hasKeyframeSegment,
+            frameMode: transcode.isFrameMode,
+            frameStreamDevice: frameStreamDevice
         });
     });
 
@@ -349,6 +563,7 @@ function initRestServer() {
     app.get('/quit', (req, res) => {
         res.json({ status: 'shutting down' });
         utils.log('🛑 Shutting down...', 'warn');
+        teardownFrameStream();
         transcode.stopTranscoding();
         process.exit(0);
     });
