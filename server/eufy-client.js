@@ -2397,10 +2397,97 @@ function rtspUrlForDevice(device) {
     } catch (e) { return null; }
 }
 
-// Same, by serial — used by the /rtsp/:sn.mp4 route in rest.js.
+// Does this camera support the local RTSP stream at all?
+function deviceSupportsRtsp(device) {
+    try { return device.getPropertyValue('rtspStream') !== undefined; }
+    catch (e) { return false; }
+}
+
 async function getRtspUrl(serialNumber) {
     try { return rtspUrlForDevice(await eufyClient.getDevice(serialNumber)); }
     catch (e) { return null; }
+}
+
+// --- Auto-managed RTSP sessions ---
+// RTSP is enabled on the camera only while something is actively using it (a
+// live viewer or a snapshot), then turned back off after a short grace period —
+// so the device setting (and any battery cost) is scoped to real use. Reference
+// counted, so concurrent viewers and quick camera switches don't thrash it. A
+// camera that doesn't answer (e.g. a sleeping battery cam) is put on a short
+// cooldown so callers fall back to P2P quickly instead of waiting every time.
+const RTSP_OFF_GRACE_MS = 30000;       // keep RTSP on this long after the last user leaves
+const RTSP_URL_WAIT_MS = 2500;         // give the station this long to hand back the URL
+const RTSP_FAIL_COOLDOWN_MS = 120000;  // after a miss, skip RTSP this long (use P2P meanwhile)
+const rtspSessions = new Map();        // serial -> { count, enabledByUs, offTimer, url, coolUntil }
+
+function rtspSession(sn) {
+    let s = rtspSessions.get(sn);
+    if (!s) { s = { count: 0, enabledByUs: false, offTimer: null, url: null, coolUntil: 0 }; rtspSessions.set(sn, s); }
+    return s;
+}
+
+// Acquire an RTSP stream URL for a camera, enabling RTSP on demand if needed.
+// Returns the rtsp:// URL, or null if the camera can't (then use P2P). Every
+// non-null result must be paired with releaseRtspSession().
+async function acquireRtspSession(serialNumber) {
+    const s = rtspSession(serialNumber);
+    if (s.offTimer) { clearTimeout(s.offTimer); s.offTimer = null; }
+    if (s.count === 0) {
+        if (Date.now() < s.coolUntil) return null;      // recently failed — skip, caller uses P2P
+        let device;
+        try { device = await eufyClient.getDevice(serialNumber); } catch (e) { return null; }
+        if (!deviceSupportsRtsp(device)) return null;
+        let url = rtspUrlForDevice(device);
+        if (url) {
+            s.enabledByUs = false;                       // already on (left on manually) — don't own it
+        } else {
+            try {
+                await eufyClient.setDeviceProperty(serialNumber, 'rtspStream', true);
+                s.enabledByUs = true;                    // we flipped it on — we turn it back off
+                const deadline = Date.now() + RTSP_URL_WAIT_MS;
+                while (!url && Date.now() < deadline) {
+                    await new Promise(r => setTimeout(r, 250));
+                    url = await getRtspUrl(serialNumber);
+                }
+            } catch (e) { utils.log(`❌ RTSP enable failed for ${serialNumber}: ${e.message}`, 'warn'); }
+        }
+        if (!url) {                                      // never came up (asleep?) — cool down and turn back off
+            s.coolUntil = Date.now() + RTSP_FAIL_COOLDOWN_MS;
+            if (s.enabledByUs) {
+                eufyClient.setDeviceProperty(serialNumber, 'rtspStream', false).catch(() => {});
+                s.enabledByUs = false;
+            }
+            s.url = null;
+            return null;
+        }
+        s.url = url;
+    }
+    s.count++;
+    return s.url;
+}
+
+// The RTSP URL can be set while the camera is asleep (endpoint exists, no
+// video). When a stream comes up empty, mark a cooldown so the next watch goes
+// straight to P2P instead of re-enabling RTSP for nothing.
+function markRtspMiss(serialNumber) {
+    rtspSession(serialNumber).coolUntil = Date.now() + RTSP_FAIL_COOLDOWN_MS;
+}
+
+// Release one hold on a camera's RTSP session; turns RTSP back off (if we
+// enabled it) once the last user leaves, after a short grace period.
+function releaseRtspSession(serialNumber) {
+    const s = rtspSessions.get(serialNumber);
+    if (!s) return;
+    s.count = Math.max(0, s.count - 1);
+    if (s.count === 0 && s.enabledByUs && !s.offTimer) {
+        s.offTimer = setTimeout(async () => {
+            s.offTimer = null;
+            if (s.count > 0) return;                     // someone came back during the grace window
+            try { await eufyClient.setDeviceProperty(serialNumber, 'rtspStream', false); } catch (e) {}
+            s.enabledByUs = false; s.url = null;
+            utils.log(`📴 RTSP auto-disabled for ${serialNumber} (idle)`, 'debug');
+        }, RTSP_OFF_GRACE_MS);
+    }
 }
 
 function getDeviceCatalog() {
@@ -2431,5 +2518,8 @@ module.exports = {
     close,
     getHousesDebug,
     getDeviceCatalog,
-    getRtspUrl
+    getRtspUrl,
+    acquireRtspSession,
+    releaseRtspSession,
+    markRtspMiss
 };

@@ -52,13 +52,17 @@ Exposes getters (`getOutputStream`, `getInitSegment`, `getLatestFrame`, `frameEt
 `isFrameMode`, metadata, etc.) consumed by `rest.js`.
 
 ### `server/rtsp-stream.js` — RTSP fast path
-Some cameras (eufyCam 2C, indoor cams) serve a local RTSP stream straight off the HomeBase on the LAN. When a
-camera's RTSP is enabled (`device.set_rtsp`, admin), the station reports an `rtsp://…` URL in the device's
-`rtspStreamUrl` property. This module consumes that URL with FFmpeg in copy mode (no transcode): `startRtspStream`
-for live view (RTSP → fragmented MP4 at `GET /rtsp/:sn.mp4`, independent of the P2P pipeline, so it doesn't use the
-station's single video slot) and `rtspSnapshot` for thumbnails. The client's HD-Stream uses `/rtsp/:sn.mp4` when
-enabled, and the snapshot path tries RTSP first — both **fall back to P2P** automatically, because a battery
-camera's RTSP stream only exists while it is awake (404 when asleep). It never turns RTSP on by itself.
+Some cameras (eufyCam 2C, indoor cams) serve a local RTSP stream straight off the HomeBase on the LAN — already
+H.264 + AAC, so FFmpeg can repackage it to fragmented MP4 in copy mode (no transcode). This is faster to start than
+P2P (~1.6s vs 4–7s, no ThroughTek setup) and doesn't use the station's single video slot. `startRtspStream` feeds
+`GET /rtsp/:sn.mp4` (live view, independent of the P2P pipeline); `rtspSnapshot` grabs thumbnails.
+
+RTSP is **auto-managed** (`acquireRtspSession`/`releaseRtspSession`/`markRtspMiss` in `eufy-client.js`): the route
+enables RTSP on the camera when a viewer connects and turns it back off ~30s after the last one leaves
+(reference-counted; only disables what it enabled), so the device setting is scoped to actual viewing. The client's
+HD-Stream uses `/rtsp/:sn.mp4` per a per-camera preference (default on for capable cams) and **falls back to P2P**
+when RTSP yields nothing — a battery camera's RTSP stream only exists while it is awake (404 when asleep), so an
+empty stream marks a short cooldown that routes the next watch straight to P2P.
 
 ### `server/push.js` — background notifications
 Web Push via VAPID. Outbound HTTPS to FCM/Apple/Mozilla push services → works from a home PC behind

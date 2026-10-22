@@ -437,19 +437,6 @@ function handleResult(msg) {
             }
             break;
 
-        case 'device.set_rtsp': {
-            const sn = msg.result?.serialNumber || pendingModeSN;
-            if (msg.success !== false && msg.result) {
-                if (sn && devices[sn]) devices[sn].rtspEnabled = !!msg.result.value;
-                flashMessage(msg.result.value ? 'Fast local stream enabled' : 'Fast local stream turned off', 2500);
-            } else {
-                flashMessage('Could not change fast stream: ' + (msg.error || msg.errorCode || 'failed'), 4000);
-            }
-            if (pendingModeSN === sn && !document.getElementById('mode-overlay').classList.contains('hidden')) {
-                openModeChooser(sn);  // refresh label/state
-            }
-            break;
-        }
         case 'device.get_properties':
             if (msg.result?.properties) {
                 const sn = msg.result.serialNumber;
@@ -821,41 +808,39 @@ function openModeChooser(serialNumber) {
     pendingModeSN = serialNumber;
     const dev = devices[serialNumber] || {};
     document.getElementById('mode-title').textContent = dev.name || serialNumber;
-    // RTSP fast-path toggle: admin-only, and only for cameras that support it
+    // Fast local stream (RTSP) preference: admin-only, for cameras that support it.
+    // The server enables RTSP on the camera only while you're watching and turns
+    // it back off shortly after you leave — this toggle just picks whether this
+    // camera uses it.
     const rtspBtn = document.getElementById('mode-rtsp');
     if (currentUser?.admin && dev.rtspSupported) {
         rtspBtn.classList.remove('hidden');
-        rtspBtn.disabled = false;
+        const on = rtspPref(serialNumber);
         document.getElementById('mode-rtsp-label').textContent =
-            dev.rtspEnabled ? 'Fast local stream: On' : 'Fast local stream: Off';
-        document.getElementById('mode-rtsp-note').textContent = dev.rtspEnabled
-            ? 'HD Stream uses the faster LAN feed. Tap to turn off.'
-            : (dev.isBattery
-                ? 'Faster LAN streaming. Tap to enable (may use more battery on this camera).'
-                : 'Faster LAN streaming over your network. Tap to enable.');
+            on ? 'Fast local stream: On' : 'Fast local stream: Off';
+        document.getElementById('mode-rtsp-note').textContent = on
+            ? 'HD Stream uses the faster LAN feed while watching, then turns off automatically.'
+            : 'Tap to use the faster LAN feed for this camera (falls back to P2P when asleep).';
     } else {
         rtspBtn.classList.add('hidden');
     }
     document.getElementById('mode-overlay').classList.remove('hidden');
 }
 
-// Enable/disable the camera's local RTSP stream (admin). Once on, HD Stream
-// uses the faster LAN feed automatically (see fetchStream).
+// Per-camera preference: should HD Stream use the RTSP fast path for this
+// camera? Default on for capable cameras. The camera's RTSP is enabled only
+// while watching (server-managed) so there's no lasting battery cost.
+function rtspPref(sn) {
+    try { return localStorage.getItem('rtsp:' + sn) !== '0'; } catch (e) { return true; }
+}
 function toggleRtsp(sn) {
     if (!sn) return;
-    const dev = devices[sn] || {};
-    const enabling = !dev.rtspEnabled;
-    if (enabling && dev.isBattery && !confirm(
-        'Enable the fast local (RTSP) stream on this battery camera?\n\n' +
-        'It streams over your LAN — faster, and works alongside other viewers — ' +
-        'but a continuous RTSP stream may use more battery on this camera.')) {
-        return;
+    const on = !rtspPref(sn);
+    try { localStorage.setItem('rtsp:' + sn, on ? '1' : '0'); } catch (e) {}
+    flashMessage(on ? 'Fast local stream on for this camera' : 'Fast local stream off for this camera', 2500);
+    if (pendingModeSN === sn && !document.getElementById('mode-overlay').classList.contains('hidden')) {
+        openModeChooser(sn);  // refresh label
     }
-    const btn = document.getElementById('mode-rtsp');
-    btn.disabled = true;
-    document.getElementById('mode-rtsp-label').textContent =
-        enabling ? 'Fast local stream: enabling…' : 'Fast local stream: turning off…';
-    wsSend({ command: 'device.set_rtsp', serialNumber: sn, value: enabling, messageId: 'device.set_rtsp' });
 }
 
 function closeModeChooser() {
@@ -1014,7 +999,7 @@ async function fetchStream(serialNumber, forcePath) {
 
     // RTSP fast path: when this camera has its local RTSP stream enabled, pull
     // from it (lower latency, no P2P slot) instead of the P2P pipeline.
-    const useRtsp = forcePath ? forcePath.startsWith('/rtsp/') : !!devices[serialNumber]?.rtspEnabled;
+    const useRtsp = forcePath ? forcePath.startsWith('/rtsp/') : (!!devices[serialNumber]?.rtspSupported && rtspPref(serialNumber));
     const streamPath = forcePath || (useRtsp ? `/rtsp/${serialNumber}.mp4` : `/${serialNumber}.mp4`);
     let received = 0;
     // A battery camera's RTSP stream is only up while it's awake (404 when

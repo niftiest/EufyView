@@ -343,14 +343,26 @@ function initRestServer() {
         if (!auth.isCameraAllowed(reqScope(req), sn)) {
             return res.status(403).json({ error: 'forbidden', message: 'Not authorized for this camera' });
         }
-        const url = await eufy.getRtspUrl(sn);
+        // Auto-manage RTSP: enable on the camera now (if needed), turn back off
+        // after the viewer leaves. null => camera can't RTSP right now (e.g.
+        // asleep) → tell the client to fall back to P2P.
+        const url = await eufy.acquireRtspSession(sn);
         if (!url) {
-            return res.status(409).json({ error: 'rtsp_off', message: 'RTSP is not enabled for this camera' });
+            return res.status(409).json({ error: 'rtsp_unavailable', message: 'RTSP not available; use P2P' });
         }
         res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'Connection': 'close' });
         const stream = rtspStream.startRtspStream(url);
         let stopped = false;
-        const cleanup = () => { if (stopped) return; stopped = true; stream.stop(); };
+        let received = 0;
+        const cleanup = () => {
+            if (stopped) return; stopped = true;
+            stream.stop();
+            eufy.releaseRtspSession(sn);
+            // Empty stream = camera asleep despite RTSP being on → cool down so
+            // the next watch falls back to P2P immediately.
+            if (received < 4096) eufy.markRtspMiss(sn);
+        };
+        stream.stdout.on('data', (d) => { received += d.length; });
         stream.stdout.pipe(res);
         stream.stdout.on('error', cleanup);
         req.on('close', cleanup);

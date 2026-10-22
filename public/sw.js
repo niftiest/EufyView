@@ -1,7 +1,7 @@
 // Service Worker for EufyView PWA
 // Minimal SW to satisfy installability requirements
 
-const CACHE_NAME = 'eufy-view-v29';
+const CACHE_NAME = 'eufy-view-v30';
 const PRECACHE = [
     '/',
     '/index.html',
