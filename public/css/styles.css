@@ -1029,6 +1029,33 @@ html, body {
     text-overflow: ellipsis;
 }
 
+.history-filters {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px 12px 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.history-filters::-webkit-scrollbar { display: none; }
+.history-chip {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.history-chip.on {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #06243f;
+}
+
 #history-list {
     padding: 4px 12px 8px;
 }
@@ -1293,7 +1320,7 @@ html, body {
 }
 .push-toggle-btn.active {
     background: var(--success);
-    color: #fff;
+    color: #08271a;            /* dark text — readable on the green "on" state */
     border-color: var(--success);
 }
 

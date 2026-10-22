@@ -945,6 +945,13 @@ function startVideoStream(serialNumber) {
     mediaSource = new MediaSource();
     video.src = URL.createObjectURL(mediaSource);
 
+    // Keep the "loading" indicator up until there's an actual picture (not just
+    // when the connection opens) — the camera may still be waking up. Covers the
+    // RTSP→P2P fallback too, since the listener outlives the retry.
+    video.addEventListener('loadeddata', () => {
+        document.getElementById('live-loading').classList.add('hidden');
+    }, { once: true });
+
     mediaSource.addEventListener('sourceopen', async () => {
         try {
             sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.64001f, mp4a.40.2"');
@@ -991,7 +998,9 @@ async function fetchStream(serialNumber, forcePath) {
             throw new Error(`Stream unavailable (HTTP ${response.status})`);
         }
 
-        document.getElementById('live-loading').classList.add('hidden');
+        // NB: loading stays visible until the video's 'loadeddata' (first frame),
+        // wired up in startVideoStream — not here, where the stream has merely
+        // connected but no picture has decoded yet.
         const reader = response.body.getReader();
 
         while (isStreaming) {
@@ -1189,7 +1198,7 @@ function openSettings() {
     document.getElementById('cfg-frame-quality').value = config.FRAME_QUALITY || '7';
     document.getElementById('cfg-frame-quality-val').textContent = config.FRAME_QUALITY || '7';
 
-    renderPushButton(localStorage.getItem('pushEnabled') === '1');
+    syncPushButton();
     renderNotifToggles();
     renderAccessSection();
     startNotifStatusTimer();
@@ -1991,6 +2000,22 @@ function renderPushButton(enabled) {
     btn.classList.toggle('active', enabled);
 }
 
+// Set the button from the REAL subscription state, not just the local flag —
+// the flag can be stale (e.g. "on" while the browser has no subscription and
+// the server has none). Keeps the local flag in sync with reality.
+async function syncPushButton() {
+    if (!pushSupported()) { renderPushButton(false); return; }
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        const on = !!sub && Notification.permission === 'granted';
+        localStorage.setItem('pushEnabled', on ? '1' : '0');
+        renderPushButton(on);
+    } catch (e) {
+        renderPushButton(false);
+    }
+}
+
 function setPushStatus(msg) {
     const el = document.getElementById('push-status');
     if (el) el.textContent = msg;
@@ -2593,6 +2618,45 @@ function onCaptchaSubmit() {
 
 let historyCamera = '';         // '' = all cameras
 let historyEvents = [];
+let historyFilter = 'all';
+const HISTORY_CATS = [
+    { key: 'person', label: 'Person' },
+    { key: 'pet', label: 'Pet' },
+    { key: 'vehicle', label: 'Vehicle' },
+    { key: 'ring', label: 'Ring' },
+    { key: 'package', label: 'Package' },
+    { key: 'sound', label: 'Sound' },
+    { key: 'motion', label: 'Motion' }
+];
+// Map an event's label to a filter category (labels come from the server's labelFor)
+function historyCategory(label) {
+    const l = String(label || '').toLowerCase();
+    if (l.includes('person') || l.includes('stranger') || l.includes('face')) return 'person';
+    if (l.includes('pet')) return 'pet';
+    if (l.includes('vehicle')) return 'vehicle';
+    if (l.includes('ring')) return 'ring';
+    if (l.includes('package')) return 'package';
+    if (l.includes('sound') || l.includes('crying')) return 'sound';
+    return 'motion';   // Motion, Activity detected, anything else
+}
+// Show a chip only for categories actually present in the loaded events (+ All).
+function renderHistoryFilters() {
+    const bar = document.getElementById('history-filters');
+    if (!bar) return;
+    const present = new Set(historyEvents.map(e => historyCategory(e.label)));
+    if (historyEvents.length === 0 || present.size <= 1) {
+        bar.classList.add('hidden'); bar.innerHTML = ''; historyFilter = 'all'; return;
+    }
+    if (historyFilter !== 'all' && !present.has(historyFilter)) historyFilter = 'all';
+    const cats = HISTORY_CATS.filter(c => present.has(c.key));
+    const chip = (key, label) => `<button class="history-chip${historyFilter === key ? ' on' : ''}" data-cat="${key}">${label}</button>`;
+    bar.innerHTML = chip('all', 'All') + cats.map(c => chip(c.key, c.label)).join('');
+    bar.classList.remove('hidden');
+    bar.querySelectorAll('.history-chip').forEach(b => b.addEventListener('click', () => {
+        historyFilter = b.dataset.cat;
+        renderHistory();
+    }));
+}
 let historyAfter = null;        // oldest boundary loaded (epoch ms) → "Load older"
 let historyPlayingId = null;
 let historyLoading = false;
@@ -2652,6 +2716,10 @@ function onHistoryList(msg) {
 
 function renderHistory() {
     const list = document.getElementById('history-list');
+    renderHistoryFilters();
+    const shown = historyFilter === 'all'
+        ? historyEvents
+        : historyEvents.filter(e => historyCategory(e.label) === historyFilter);
     document.getElementById('history-empty').classList.toggle('hidden', historyEvents.length > 0);
     let html = '';
     if (historyHb3.length) {
@@ -2660,8 +2728,12 @@ function renderHistory() {
     if (historySilent.length) {
         html += `<p class="settings-hint" style="padding:8px 0 0">Not responding, so recordings not listed: ${escapeText(historySilent.join('; '))}</p>`;
     }
+    if (shown.length === 0 && historyEvents.length > 0) {
+        const lbl = (HISTORY_CATS.find(c => c.key === historyFilter) || {}).label || 'matching';
+        html += `<p class="settings-hint" style="padding:16px 0">No ${escapeText(lbl)} events in this range — Load older to search further.</p>`;
+    }
     let lastDay = '';
-    for (const ev of historyEvents) {
+    for (const ev of shown) {
         const start = new Date(ev.start * 1000);
         const day = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
         if (day !== lastDay) { html += `<div class="history-day">${day}</div>`; lastDay = day; }
@@ -2700,7 +2772,10 @@ function openHistoryClip(id) {
     const name = devices[ev.serialNumber]?.name || ev.deviceName;
     document.getElementById('history-player-title').textContent =
         `${ev.label} · ${name} · ${new Date(ev.start * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
-    document.getElementById('history-player').classList.remove('hidden');
+    const player = document.getElementById('history-player');
+    player.classList.remove('hidden');
+    // Scroll back up to the player — the list can be long and the player sits on top.
+    player.scrollIntoView({ behavior: 'smooth', block: 'start' });
     document.querySelectorAll('.history-entry').forEach(b => b.classList.toggle('playing', b.dataset.id === id));
     const img = document.getElementById('history-image');
     // Detection-only entry: show its snapshot (no recorded clip to fetch)
