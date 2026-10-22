@@ -237,7 +237,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeModeChooser();
         openHistory(sn || '');
     });
-    document.getElementById('mode-rtsp').addEventListener('click', () => toggleRtsp(pendingModeSN));
     document.getElementById('mode-close').addEventListener('click', closeModeChooser);
     document.getElementById('mode-overlay').addEventListener('click', (e) => {
         if (e.target.id === 'mode-overlay') closeModeChooser();
@@ -459,9 +458,7 @@ function handleResult(msg) {
                     hasMotionTracking: props.motionTracking !== undefined,
                     motionTracking: !!props.motionTracking,
                     // RTSP fast path: supported if the camera exposes the property at all
-                    rtspSupported: props.rtspStream !== undefined,
-                    rtspEnabled: !!props.rtspStream,
-                    isBattery: props.battery !== undefined && props.battery !== null
+                    rtspSupported: props.rtspStream !== undefined
                 };
                 renderCameraGrid();
                 if (currentDeviceSN === sn) updateLiveControls();
@@ -808,39 +805,7 @@ function openModeChooser(serialNumber) {
     pendingModeSN = serialNumber;
     const dev = devices[serialNumber] || {};
     document.getElementById('mode-title').textContent = dev.name || serialNumber;
-    // Fast local stream (RTSP) preference: admin-only, for cameras that support it.
-    // The server enables RTSP on the camera only while you're watching and turns
-    // it back off shortly after you leave — this toggle just picks whether this
-    // camera uses it.
-    const rtspBtn = document.getElementById('mode-rtsp');
-    if (currentUser?.admin && dev.rtspSupported) {
-        rtspBtn.classList.remove('hidden');
-        const on = rtspPref(serialNumber);
-        document.getElementById('mode-rtsp-label').textContent =
-            on ? 'Fast local stream: On' : 'Fast local stream: Off';
-        document.getElementById('mode-rtsp-note').textContent = on
-            ? 'HD Stream uses the faster LAN feed while watching, then turns off automatically.'
-            : 'Tap to use the faster LAN feed for this camera (falls back to P2P when asleep).';
-    } else {
-        rtspBtn.classList.add('hidden');
-    }
     document.getElementById('mode-overlay').classList.remove('hidden');
-}
-
-// Per-camera preference: should HD Stream use the RTSP fast path for this
-// camera? Default on for capable cameras. The camera's RTSP is enabled only
-// while watching (server-managed) so there's no lasting battery cost.
-function rtspPref(sn) {
-    try { return localStorage.getItem('rtsp:' + sn) !== '0'; } catch (e) { return true; }
-}
-function toggleRtsp(sn) {
-    if (!sn) return;
-    const on = !rtspPref(sn);
-    try { localStorage.setItem('rtsp:' + sn, on ? '1' : '0'); } catch (e) {}
-    flashMessage(on ? 'Fast local stream on for this camera' : 'Fast local stream off for this camera', 2500);
-    if (pendingModeSN === sn && !document.getElementById('mode-overlay').classList.contains('hidden')) {
-        openModeChooser(sn);  // refresh label
-    }
 }
 
 function closeModeChooser() {
@@ -997,9 +962,10 @@ async function fetchStream(serialNumber, forcePath) {
     const video = document.getElementById('live-video');
     const bufferEl = document.getElementById('live-buffer');
 
-    // RTSP fast path: when this camera has its local RTSP stream enabled, pull
-    // from it (lower latency, no P2P slot) instead of the P2P pipeline.
-    const useRtsp = forcePath ? forcePath.startsWith('/rtsp/') : (!!devices[serialNumber]?.rtspSupported && rtspPref(serialNumber));
+    // RTSP fast path: automatically used for any camera that supports it (the
+    // server enables RTSP only while watching, then turns it off). Falls back to
+    // the P2P pipeline below if RTSP yields nothing (e.g. a battery cam asleep).
+    const useRtsp = forcePath ? forcePath.startsWith('/rtsp/') : !!devices[serialNumber]?.rtspSupported;
     const streamPath = forcePath || (useRtsp ? `/rtsp/${serialNumber}.mp4` : `/${serialNumber}.mp4`);
     let received = 0;
     // A battery camera's RTSP stream is only up while it's awake (404 when
