@@ -1,0 +1,26 @@
+node_modules/
+node/
+data/
+ffmpeg/
+_reference/
+*.log
+persistent.json
+
+# Installer build artifacts
+installer/build-cache/
+installer/dist/
+installer/EufyViewTray.exe
+installer/tray-icon.ico
+
+# Auth secrets (session secret + password hashes). Now lives in data/, but keep
+# this rule for older layouts that kept it at the repo root.
+auth.json
+
+# AI assistant onboarding (kept local, not published)
+CLAUDE.md
+AGENTS.md
+
+# Android TV release signing (never commit)
+tv-app/keystore.properties
+*.jks
+*.keystore

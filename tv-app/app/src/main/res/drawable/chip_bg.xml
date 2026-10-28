@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Toggle "chip" background. Blue = on (activated), dark = off; a bright border
+     marks D-pad focus so navigation is obvious on a TV. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#4A9EFF" />
+            <corners android:radius="24dp" />
+            <stroke android:width="3dp" android:color="#FFFFFF" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#223047" />
+            <corners android:radius="24dp" />
+            <stroke android:width="3dp" android:color="#FFFFFF" />
+        </shape>
+    </item>
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#4A9EFF" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#161C28" />
+            <corners android:radius="24dp" />
+            <stroke android:width="2dp" android:color="#2E3A4D" />
+        </shape>
+    </item>
+</selector>

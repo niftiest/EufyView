@@ -1,0 +1,28 @@
+# EufyView - self-hosted Eufy camera viewer.
+#   docker compose up -d        start in the background
+#   docker compose logs -f      follow logs
+#   docker compose pull && docker compose up -d   upgrade
+#
+# First run: the app has no auth.json yet. Either let onboarding create one, or
+# drop an existing data/auth.json in before starting. Everything under ./data
+# persists across upgrades; the rest of the image is replaceable app code.
+services:
+  eufyview:
+    image: ghcr.io/niftiest/eufyview:latest
+    # To build locally instead of pulling the published image, comment out the
+    # image: line above and uncomment:
+    # build: .
+    container_name: eufyview
+    restart: unless-stopped
+    ports:
+      - "3001:3001"          # web UI / API - change the left side to re-map the host port
+    volumes:
+      - ./data:/app/data     # persisted state (auth, subscriptions, snapshots, clips, logs)
+    environment:
+      - PORT=3001
+      - TZ=UTC               # set your zone, e.g. America/New_York, for correct log/event times
+    # Eufy uses UDP P2P (ThroughTek, port 32100) and live video is LAN-local.
+    # Bridge networking (above) handles the common case via outbound NAT. If
+    # cameras won't connect, switch to host networking instead - comment out the
+    # ports: block above and uncomment the next line (Linux hosts only):
+    # network_mode: host

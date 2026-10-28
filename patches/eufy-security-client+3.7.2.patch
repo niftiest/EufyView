@@ -1,0 +1,152 @@
+diff --git a/node_modules/eufy-security-client/build/http/station.js b/node_modules/eufy-security-client/build/http/station.js
+index 1dda71e..39236ea 100644
+--- a/node_modules/eufy-security-client/build/http/station.js
++++ b/node_modules/eufy-security-client/build/http/station.js
+@@ -6421,6 +6421,7 @@ class Station extends tiny_typed_emitter_1.TypedEmitter {
+             /*this.rawStation.station_sn, */ cipher_id, this.rawStation.member.admin_user_id);
+             if (Object.keys(cipher).length > 0) {
+                 this.p2pSession.setDownloadRSAPrivateKeyPem(cipher.private_key);
++                this.p2pSession.downloadEccPrivateKey = cipher.ecc_private_key || null;
+                 this.p2pSession.sendCommandWithString({
+                     commandType: types_2.CommandType.CMD_DOWNLOAD_VIDEO,
+                     strValue: path,
+diff --git a/node_modules/eufy-security-client/build/p2p/session.js b/node_modules/eufy-security-client/build/p2p/session.js
+index 63356e1..4a428ac 100644
+--- a/node_modules/eufy-security-client/build/p2p/session.js
++++ b/node_modules/eufy-security-client/build/p2p/session.js
+@@ -18,6 +18,7 @@ const ble_1 = require("./ble");
+ const http_1 = require("../http");
+ const utils_3 = require("../utils");
+ const logging_1 = require("../logging");
++const eufyDlCrypto = (() => { try { return require("../../../../server/eufy-dl-crypto.js"); } catch (e) { return null; } })();
+ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+     MAX_RETRIES = 10;
+     MAX_COMMAND_RESULT_WAIT = 30 * 1000;
+@@ -1662,6 +1663,17 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+                                 this.waitForStreamData(types_1.P2PDataType.VIDEO, true);
+                             }
+                             else if (msg_state.commandType === types_1.CommandType.CMD_DOWNLOAD_VIDEO) {
++                                // [Chime] the hub returns the per-clip media-key `rand`
++                                // ("01"+digits) in the download result; stash it so the
++                                // keyframe decode can derive the AES-128 key. (See memory
++                                // chime-doorbell-playback.)
++                                try {
++                                    this.downloadChimeRand = null;
++                                    if (resultData && resultData.length) {
++                                        const __s = resultData.toString("latin1").replace(/\u0000+$/, "").trim();
++                                        if (/^01\d{6,}$/.test(__s)) this.downloadChimeRand = __s;
++                                    }
++                                } catch (__e) { }
+                                 this.waitForStreamData(types_1.P2PDataType.BINARY, true);
+                             }
+                             else if (msg_state.commandType === types_1.CommandType.CMD_START_TALKBACK ||
+@@ -1830,41 +1842,67 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+                     videoMetaData.videoHeight = message.data.subarray(12, 14).readUInt16LE();
+                     videoMetaData.videoTimestamp = message.data.subarray(14, 20).readUIntLE(0, 6);
+                     let payloadStart = 22;
++                    let __eciesVideo = null;
+                     if (message.signCode > 0 && data_length >= 128) {
+-                        const key = message.data.subarray(22, 150);
+-                        const rsaKey = this.currentMessageState[message.dataType].rsaKey;
+-                        if (rsaKey) {
++                        const __eccKey = this.downloadEccPrivateKey;
++                        if (__eccKey && eufyDlCrypto) {
+                             try {
+-                                videoMetaData.aesKey = rsaKey.decrypt(key).toString("hex");
+-                                logging_1.rootP2PLogger.trace(`Handle DATA ${types_1.P2PDataType[message.dataType]} - Decrypted AES key`, {
+-                                    stationSN: this.rawStation.station_sn,
+-                                    key: videoMetaData.aesKey,
+-                                });
++                                const __dec = eufyDlCrypto.decodeKeyframe(message.data, __eccKey);
++                                this.currentMessageState[message.dataType].eccMediaKey = __dec.mediaKey;
++                                this._lastEccMediaKey = __dec.mediaKey;
++                                __eciesVideo = __dec.video;
++                                videoMetaData.aesKey = "";
+                             }
+-                            catch (err) {
+-                                const error = (0, error_1.ensureError)(err);
+-                                logging_1.rootP2PLogger.warn(`Error: AES key could not be decrypted! The entire stream is discarded.`, {
+-                                    error: (0, utils_3.getError)(error),
+-                                    stationSN: this.rawStation.station_sn,
+-                                    key: key.toString("hex"),
+-                                });
++                            catch (__e) {
++                                logging_1.rootP2PLogger.warn(`[ECIES] keyframe decode failed: ${__e.message}`, { stationSN: this.rawStation.station_sn });
++                                this.currentMessageState[message.dataType].invalidStream = true;
++                                this.emit("livestream error", message.channel, new error_1.LivestreamError("HB2 keyframe ECIES decode failed", { context: { station: this.rawStation.station_sn } }));
++                                return;
++                            }
++                        }
++                        else if (this.downloadChimeRand && eufyDlCrypto && eufyDlCrypto.decodeChimeKeyframe) {
++                            // [Chime] whole keyframe body is AES-128-ECB under a key
++                            // derived from station serial + p2p_did + per-clip rand.
++                            try {
++                                __eciesVideo = eufyDlCrypto.decodeChimeKeyframe(message.data, this.rawStation.station_sn, this.rawStation.p2p_did, this.downloadChimeRand);
++                                videoMetaData.aesKey = "";
++                            }
++                            catch (__e) {
++                                logging_1.rootP2PLogger.warn(`[Chime] keyframe decode failed: ${__e.message}`, { stationSN: this.rawStation.station_sn });
+                                 this.currentMessageState[message.dataType].invalidStream = true;
+-                                this.emit("livestream error", message.channel, new error_1.LivestreamError("Station AES key could not be decrypted! The entire stream is discarded.", {
+-                                    context: { station: this.rawStation.station_sn },
+-                                }));
++                                this.emit("livestream error", message.channel, new error_1.LivestreamError("Chime keyframe decode failed", { context: { station: this.rawStation.station_sn } }));
+                                 return;
+                             }
+                         }
+                         else {
+-                            logging_1.rootP2PLogger.warn(`Private RSA key is missing! Stream could not be decrypted. The entire stream for station ${this.rawStation.station_sn} is discarded.`);
+-                            this.currentMessageState[message.dataType].invalidStream = true;
+-                            this.emit("livestream error", message.channel, new error_1.LivestreamError("Station Private RSA key is missing! Stream could not be decrypted. The entire stream is discarded.", { context: { station: this.rawStation.station_sn } }));
+-                            return;
++                            const key = message.data.subarray(22, 150);
++                            const rsaKey = this.currentMessageState[message.dataType].rsaKey;
++                            if (rsaKey) {
++                                try {
++                                    videoMetaData.aesKey = rsaKey.decrypt(key).toString("hex");
++                                }
++                                catch (err) {
++                                    const error = (0, error_1.ensureError)(err);
++                                    logging_1.rootP2PLogger.warn(`Error: AES key could not be decrypted! The entire stream is discarded.`, { error: (0, utils_3.getError)(error), stationSN: this.rawStation.station_sn, key: key.toString("hex") });
++                                    this.currentMessageState[message.dataType].invalidStream = true;
++                                    this.emit("livestream error", message.channel, new error_1.LivestreamError("Station AES key could not be decrypted! The entire stream is discarded.", { context: { station: this.rawStation.station_sn } }));
++                                    return;
++                                }
++                            }
++                            else {
++                                logging_1.rootP2PLogger.warn(`Private RSA key is missing! Stream could not be decrypted. The entire stream for station ${this.rawStation.station_sn} is discarded.`);
++                                this.currentMessageState[message.dataType].invalidStream = true;
++                                this.emit("livestream error", message.channel, new error_1.LivestreamError("Station Private RSA key is missing! Stream could not be decrypted. The entire stream is discarded.", { context: { station: this.rawStation.station_sn } }));
++                                return;
++                            }
++                            payloadStart = 151;
+                         }
+-                        payloadStart = 151;
+                     }
+                     let video_data;
+-                    if (videoMetaData.aesKey !== "") {
++                    if (__eciesVideo) {
++                        video_data = __eciesVideo;
++                    }
++                    else if (videoMetaData.aesKey !== "") {
+                         const encrypted_data = message.data.subarray(payloadStart, payloadStart + 128);
+                         const unencrypted_data = message.data.subarray(payloadStart + 128, payloadStart + videoMetaData.videoDataLength);
+                         video_data = Buffer.concat([(0, utils_1.decryptAESData)(videoMetaData.aesKey, encrypted_data), unencrypted_data]);
+@@ -2032,7 +2070,16 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+                     audioMetaData.audioType = message.data.subarray(5, 6).readUInt8();
+                     audioMetaData.audioSeqNo = message.data.subarray(6, 8).readUInt16LE();
+                     audioMetaData.audioTimestamp = message.data.subarray(8, 14).readUIntLE(0, 6);
+-                    const audio_data = Buffer.from(message.data.subarray(16));
++                    let audio_data;
++                    const __amk = this.currentMessageState[message.dataType].eccMediaKey || this._lastEccMediaKey;
++                    if (__amk && eufyDlCrypto) {
++                        try { audio_data = eufyDlCrypto.decodeAudio(message.data, __amk).audio; }
++                        catch (__ae) { logging_1.rootP2PLogger.warn(`[ECIES] audio decode failed: ${__ae.message}`); audio_data = Buffer.alloc(0); }
++                    }
++                    else {
++                        // Chime audio (and plaintext inter-frames) pass through unchanged.
++                        audio_data = Buffer.from(message.data.subarray(16));
++                    }
+                     logging_1.rootP2PLogger.trace(`Handle DATA ${types_1.P2PDataType[message.dataType]} - CMD_AUDIO_FRAME`, {
+                         stationSN: this.rawStation.station_sn,
+                         dataSize: message.data.length,

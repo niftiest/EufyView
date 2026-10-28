@@ -1,0 +1,79 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Release signing is read from tv-app/keystore.properties (gitignored) if present.
+// Without it, assembleRelease produces an unsigned APK. See tv-app/README.md.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
+android {
+    namespace 'com.eufyview.tv'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.eufyview.tv'
+        minSdk 22
+        // Target 30 on purpose: keeps the overlay + foreground-service rules at the
+        // milder Android-11 level (Fire TV / Google TV sticks run ~API 28-30), so a
+        // sideloaded appliance app doesn't trip the Android-12+/14 FGS-type and
+        // exact-alarm tightenings. Bump later if we ever ship via a store.
+        targetSdk 30
+        // versionCode scheme: major*10000 + minor*100 + patch. The in-app updater
+        // compares the release's versionCode to the installed one, so bump this
+        // every TV-app release (and build-release.ps1 publishes the matching
+        // EufyView-TV.apk.version sidecar the server reads).
+        versionCode 10000
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                // Resolve relative to tv-app/ (rootProject), where keystore.properties
+                // and the .jks live - NOT the app module dir that file() would use.
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    // Don't let a lint nit fail the release build (lintVitalRelease). We still
+    // see warnings; they just don't abort packaging/signing.
+    lint {
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // Live-view player (tap an alert → full-screen camera feed). media3 handles
+    // fragmented/live MP4 and custom auth headers; pulls in AndroidX.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    // Dashboard home: horizontal card rows + vertical list of rows, with D-pad
+    // focus handling. RecyclerView is enough - no Leanback, so the look is ours.
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+}

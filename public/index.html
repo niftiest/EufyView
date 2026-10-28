@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>EufyView</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icon-192.svg">
+    <link rel="apple-touch-icon" href="icon-192.svg">
+    <link rel="stylesheet" href="css/styles.css?v=__ASSETVER__">
+    <script>
+        // Apply the saved theme before first paint so there's no flash. Light is
+        // the default; dark is opt-in and remembered per device.
+        try {
+            if (localStorage.getItem('eufyview-theme') === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        } catch (e) {}
+    </script>
+</head>
+<body>
+    <!-- Inline icon sprite (line icons, inherit color + size via .ic). -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="ic-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+        <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+        <symbol id="ic-film" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.5"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></symbol>
+        <symbol id="ic-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+        <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+        <symbol id="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+        <symbol id="ic-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+        <symbol id="ic-arrow-left" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></symbol>
+        <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+        <symbol id="ic-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+        <symbol id="ic-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+        <symbol id="ic-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+        <symbol id="ic-chevron-right" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+        <symbol id="ic-volume-x" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></symbol>
+        <symbol id="ic-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></symbol>
+        <symbol id="ic-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+        <symbol id="ic-pip" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="11" y="11" width="9" height="7" rx="1"/></symbol>
+        <symbol id="ic-bolt" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+        <symbol id="ic-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="ic-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+        <symbol id="ic-tv" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></symbol>
+        <symbol id="ic-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+        <symbol id="ic-video" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></symbol>
+    </svg>
+
+    <!-- Top bar -->
+    <header id="header">
+        <h1>EufyView</h1>
+        <div id="header-actions">
+            <span id="connection-dot" class="dot disconnected"></span>
+            <button id="snapshot-all-btn" class="btn-icon hidden" title="Refresh all thumbnails"><svg class="ic"><use href="#ic-camera"/></svg></button>
+            <button id="timeline-btn" class="btn-icon hidden" title="Events"><svg class="ic"><use href="#ic-bell"/></svg></button>
+            <button id="history-btn" class="btn-icon hidden" title="Recordings"><svg class="ic"><use href="#ic-film"/></svg></button>
+            <button id="health-btn" class="btn-icon hidden" title="Health"><svg class="ic"><use href="#ic-activity"/></svg></button>
+            <button id="theme-btn" class="btn-icon" title="Toggle light / dark"><svg class="ic ic-moon"><use href="#ic-moon"/></svg><svg class="ic ic-sun"><use href="#ic-sun"/></svg></button>
+            <button id="settings-btn" class="btn-icon" title="Settings"><svg class="ic"><use href="#ic-gear"/></svg></button>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <main id="app">
+        <!-- Camera grid (shown when connected) -->
+        <section id="cameras-screen" class="screen active">
+            <div id="camera-grid"></div>
+        </section>
+
+        <!-- Event Timeline -->
+        <section id="timeline-screen" class="screen">
+            <div id="timeline-header">
+                <button id="timeline-back" class="btn-icon"><svg class="ic"><use href="#ic-arrow-left"/></svg></button>
+                <span>Events</span>
+                <button id="timeline-clear" class="btn-icon" title="Clear"><svg class="ic"><use href="#ic-trash"/></svg></button>
+            </div>
+            <div id="timeline-list"></div>
+            <div id="timeline-empty">
+                <p>No events yet</p>
+            </div>
+        </section>
+
+        <!-- Recordings (event history + clip player) -->
+        <section id="history-screen" class="screen">
+            <div id="history-header">
+                <button id="history-back" class="btn-icon"><svg class="ic"><use href="#ic-arrow-left"/></svg></button>
+                <span>Recordings</span>
+                <select id="history-camera" title="Camera"><option value="">All cameras</option></select>
+                <button id="history-calendar" class="btn-icon" title="Jump to a date"><svg class="ic"><use href="#ic-calendar"/></svg></button>
+                <button id="history-ds" class="btn-icon" title="Data Saver - watch events as low-bandwidth frames"><svg class="ic"><use href="#ic-bolt"/></svg></button>
+                <button id="history-refresh" class="btn-icon" title="Refresh"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+            </div>
+            <div id="history-calpop" class="hidden">
+                <div id="history-calpop-head">
+                    <button id="history-cal-prev" class="btn-icon" title="Previous month">&#9664;</button>
+                    <span id="history-cal-month"></span>
+                    <button id="history-cal-next" class="btn-icon" title="Next month">&#9654;</button>
+                </div>
+                <div id="history-cal-grid"></div>
+                <div id="history-cal-note" class="settings-hint"></div>
+            </div>
+            <div id="history-player" class="hidden">
+                <video id="history-video" controls playsinline controlsList="nodownload"></video>
+                <img id="history-image" class="hidden" alt="Event snapshot">
+                <div id="history-frame-controls" class="hidden">
+                    <button id="history-frame-play" class="frame-play" title="Play / pause">&#9208;</button>
+                    <input id="history-frame-scrub" type="range" min="1" max="1" value="1" step="1">
+                    <span id="history-frame-time">Data Saver</span>
+                </div>
+                <div id="history-status"></div>
+                <div id="history-player-meta">
+                    <span id="history-player-title"></span>
+                    <button id="history-download" class="btn-secondary hidden"><svg class="ic"><use href="#ic-download"/></svg> Download</button>
+                    <button id="history-player-close" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <div id="history-filters" class="history-filters hidden"></div>
+            <div id="history-backfill" class="hidden"></div>
+            <div id="history-list"></div>
+            <div id="history-empty" class="hidden"><p>No recordings in this period</p></div>
+            <button id="history-more" class="btn-secondary hidden">Load older</button>
+        </section>
+
+        <!-- Camera Health Dashboard -->
+        <section id="health-screen" class="screen">
+            <div id="health-header">
+                <button id="health-back" class="btn-icon"><svg class="ic"><use href="#ic-arrow-left"/></svg></button>
+                <span>Camera Health</span>
+            </div>
+            <div id="health-list"></div>
+        </section>
+
+        <!-- Users & Access: full-screen camera-assignment page (admin) -->
+        <div id="claim-modal" class="modal-overlay hidden">
+            <div class="modal-card">
+                <h3>One-time claim code</h3>
+                <p class="settings-hint">Share this with the user. They enter their email and this code on the <b>First time</b> tab of the sign-in page to set their password. It is shown only once.</p>
+                <div id="claim-code" class="claim-code"></div>
+                <button id="claim-copy" class="btn-secondary">Copy code</button>
+                <button id="claim-done" class="btn-primary">Done</button>
+            </div>
+        </div>
+
+        <!-- Live view (shown when watching a camera) -->
+        <section id="live-screen" class="screen">
+            <div id="live-header">
+                <button id="live-back" class="btn-icon"><svg class="ic"><use href="#ic-arrow-left"/></svg></button>
+                <span id="live-title">Camera</span>
+                <span id="live-buffer"></span>
+                <button id="live-reload" class="btn-icon" title="Reload stream"><svg class="ic"><use href="#ic-refresh"/></svg></button>
+            </div>
+            <div id="live-container">
+                <video id="live-video" playsinline autoplay muted></video>
+                <img id="live-frame" class="hidden" alt="">
+                <div id="live-error" class="hidden"></div>
+                <div id="live-loading" class="hidden">
+                    <div class="spinner"></div>
+                    <span>Connecting to camera...</span>
+                </div>
+            </div>
+            <div id="live-controls">
+                <button id="live-mute-btn" class="btn-icon" title="Unmute"><svg class="ic"><use href="#ic-volume-x"/></svg></button>
+                <button id="live-fullscreen-btn" class="btn-icon" title="Fullscreen"><svg class="ic"><use href="#ic-maximize"/></svg></button>
+                <button id="live-pip-btn" class="btn-icon hidden" title="Picture in Picture"><svg class="ic"><use href="#ic-pip"/></svg></button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings modal -->
+    <!-- First-run setup wizard: Eufy account login (+ captcha / 2FA handling) -->
+    <div id="setup-overlay" class="overlay hidden">
+        <div class="modal setup-modal">
+            <div class="modal-header">
+                <h2>Connect your Eufy account</h2>
+            </div>
+            <div class="modal-body" id="setup-body"></div>
+        </div>
+    </div>
+
+    <div id="settings-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <button id="settings-back" class="btn-icon hidden"><svg class="ic"><use href="#ic-arrow-left"/></svg></button>
+                <h2 id="settings-title">Settings</h2>
+                <button id="settings-close" class="btn-icon"><svg class="ic"><use href="#ic-x"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <!-- Level 1: the menu of areas -->
+                <nav id="settings-menu" class="settings-menu">
+                    <button class="settings-menu-item" data-pane="notifications"><span class="smi-ic"><svg class="ic"><use href="#ic-bell"/></svg></span><span class="smi-label">Notifications</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item admin-only hidden" data-pane="video"><span class="smi-ic"><svg class="ic"><use href="#ic-video"/></svg></span><span class="smi-label">Video &amp; Data Saver</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item admin-only hidden" data-pane="users"><span class="smi-ic"><svg class="ic"><use href="#ic-users"/></svg></span><span class="smi-label">Manage Users</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item admin-only hidden" data-pane="server"><span class="smi-ic"><svg class="ic"><use href="#ic-key"/></svg></span><span class="smi-label">Server Settings</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item admin-only hidden" data-pane="pair"><span class="smi-ic"><svg class="ic"><use href="#ic-tv"/></svg></span><span class="smi-label">Pair a TV</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item admin-only admin-lan hidden" data-pane="installtv"><span class="smi-ic"><svg class="ic"><use href="#ic-download"/></svg></span><span class="smi-label">Install to TV</span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                    <button class="settings-menu-item" data-pane="about"><span class="smi-ic"><svg class="ic"><use href="#ic-download"/></svg></span><span class="smi-label">About &amp; Updates</span><span id="about-menu-dot" class="smi-badge hidden"></span><span class="smi-arrow"><svg class="ic"><use href="#ic-chevron-right"/></svg></span></button>
+                </nav>
+
+                <!-- Level 2: one pane per area (shown via the menu) -->
+                <section class="settings-pane hidden" data-pane="notifications">
+                    <button id="push-enable-btn" class="btn-secondary push-toggle-btn">Enable background notifications</button>
+                    <p class="settings-hint" id="push-status">Get detection alerts even when the app is closed. On iPhone, install to the Home Screen first.</p>
+                    <label>Notification style
+                        <select id="notif-style">
+                            <option value="full">Full effect: text now, then thumbnail</option>
+                            <option value="thumb">Include thumbnail (may arrive a few seconds later)</option>
+                            <option value="text">Text only (fastest)</option>
+                        </select>
+                    </label>
+                    <p class="settings-hint">These choices are yours alone; they don't change anyone else's alerts. Thumbnails show on Android; iPhone shows text only.</p>
+                    <div id="notif-toggles"></div>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="video">
+                    <h3>Video</h3>
+                    <label>Scale
+                        <select id="cfg-scale">
+                            <option value="">Original</option>
+                            <option value="1280:-2">720p</option>
+                            <option value="1920:-2">1080p</option>
+                            <option value="640:-2">360p</option>
+                        </select>
+                    </label>
+                    <label>Quality (CRF)
+                        <input type="range" id="cfg-crf" min="18" max="35" value="23">
+                        <span id="cfg-crf-val">23</span>
+                    </label>
+                    <h3>Data Saver (frame view)</h3>
+                    <p class="settings-hint">Low-bandwidth mode that loads still frames instead of a video stream - works on restricted/metered WiFi.</p>
+                    <label>Frame rate
+                        <select id="cfg-frame-fps">
+                            <option value="1">1 fps (lowest data)</option>
+                            <option value="2">2 fps</option>
+                            <option value="3">3 fps</option>
+                            <option value="5">5 fps (smoothest)</option>
+                        </select>
+                    </label>
+                    <label>Frame size
+                        <select id="cfg-frame-scale">
+                            <option value="480:-2">480p (lowest data)</option>
+                            <option value="640:-2">640p</option>
+                            <option value="960:-2">960p</option>
+                            <option value="1280:-2">720p (sharpest)</option>
+                        </select>
+                    </label>
+                    <label>Frame quality (JPEG)
+                        <input type="range" id="cfg-frame-quality" min="2" max="20" value="7">
+                        <span id="cfg-frame-quality-val">7</span>
+                    </label>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="pair">
+                    <p class="settings-hint">Show a short code to pair a Fire TV / Android TV running the EufyView TV app. Enter the code on the TV.</p>
+                    <button id="pair-tv-btn" class="btn-secondary">Pair a TV</button>
+                    <div id="pair-tv-result" class="hidden"></div>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="installtv">
+                    <p class="settings-hint">Turn on <b>ADB debugging</b> in the TV's Developer Options, then scan. Devices you install this way are paired automatically (no code needed).</p>
+                    <button id="smart-scan-btn" class="btn-secondary">Scan for TVs</button>
+                    <div id="smart-devices"></div>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="users">
+                    <div id="admin-admin-row" class="admin-self"></div>
+                    <div id="admin-users"></div>
+                    <button id="admin-add-user" class="btn-primary">Add user</button>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="server">
+                    <h3>Administrator account</h3>
+                    <p class="settings-hint">Change the administrator sign-in. Your current password is required.</p>
+                    <label>New email <input id="aa-email" type="email" autocomplete="username" placeholder="leave blank to keep"></label>
+                    <label>New password <input id="aa-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep"></label>
+                    <label>Current password <input id="aa-current" type="password" autocomplete="current-password"></label>
+                    <button id="aa-save" class="btn-primary">Save changes</button>
+                    <div id="aa-msg" class="admin-msg"></div>
+                    <h3>Security</h3>
+                    <p class="settings-hint">Accounts and IP addresses temporarily locked out after repeated failed sign-ins. Lockouts clear automatically.</p>
+                    <div id="admin-lockouts"></div>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="about">
+                    <div class="about-version">
+                        <span class="about-version-label">EufyView</span>
+                        <span id="about-current-version" class="about-version-num">-</span>
+                    </div>
+                    <div id="about-update-status" class="about-status">Checking for updates…</div>
+                    <div id="about-update-notes" class="about-notes hidden"></div>
+                    <button id="about-update-btn" class="btn-primary hidden">Update now</button>
+                    <div id="about-update-progress" class="about-progress hidden"></div>
+                    <p id="about-update-hint" class="settings-hint hidden"></p>
+                    <button id="about-check-btn" class="btn-secondary">Check for updates</button>
+                </section>
+
+                <section class="settings-pane hidden" data-pane="access">
+                    <label id="access-email-field">
+                        <span class="access-field-label">Email (their username)</span>
+                        <input type="email" id="access-email" placeholder="name@example.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+                    </label>
+                    <p class="settings-hint">Tap a camera to include it. <span class="access-key-on">Green</span> = this person can see it. Then tap the button below to save.</p>
+                    <div id="access-cameras"></div>
+                    <p class="settings-hint" id="access-msg"></p>
+                    <button id="access-save-btn" class="btn-primary">Create user</button>
+                </section>
+            </div>
+            <div class="modal-footer hidden" id="settings-footer">
+                <button id="settings-save" class="btn-primary">Save</button>
+                <button id="settings-cancel" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode chooser: HD stream vs Data Saver -->
+    <div id="mode-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="mode-title">Watch camera</h2>
+                <button id="mode-close" class="btn-icon"><svg class="ic"><use href="#ic-x"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <p id="mode-offline-note" class="mode-offline-note hidden"></p>
+                <button class="mode-option" id="mode-stream">
+                    <span class="mode-icon"><svg class="ic"><use href="#ic-video"/></svg></span>
+                    <span class="mode-text">
+                        <strong>HD Stream</strong>
+                        <small>Full quality video + audio. Uses more data.</small>
+                    </span>
+                </button>
+                <button class="mode-option" id="mode-frame">
+                    <span class="mode-icon"><svg class="ic"><use href="#ic-bolt"/></svg></span>
+                    <span class="mode-text">
+                        <strong>Data Saver</strong>
+                        <small>Low-bandwidth still frames, no audio. Works on restricted/metered WiFi.</small>
+                    </span>
+                </button>
+                <button class="mode-option" id="mode-history">
+                    <span class="mode-icon"><svg class="ic"><use href="#ic-film"/></svg></span>
+                    <span class="mode-text">
+                        <strong>Recordings</strong>
+                        <small>Browse and play this camera's recorded events.</small>
+                    </span>
+                </button>
+                <button class="mode-option mode-refresh hidden" id="mode-refresh">
+                    <span class="mode-icon"><svg class="ic"><use href="#ic-refresh"/></svg></span>
+                    <span class="mode-text">
+                        <strong class="mode-rf-label">Refresh</strong>
+                        <small>Check whether the camera is back online.</small>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Doorbell quick replies -->
+    <div id="qr-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Quick reply</h2>
+                <button id="qr-close" class="btn-icon"><svg class="ic"><use href="#ic-x"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <p class="settings-hint">Plays through the doorbell's speaker.</p>
+                <div id="qr-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Captcha modal -->
+    <div id="captcha-overlay" class="overlay hidden">
+        <div class="modal">
+            <div class="modal-header"><h2>Captcha Required</h2></div>
+            <div class="modal-body">
+                <p>Eufy requires a captcha to verify your login.</p>
+                <img id="captcha-img" alt="captcha">
+                <input type="text" id="captcha-input" placeholder="Enter captcha text">
+            </div>
+            <div class="modal-footer">
+                <button id="captcha-submit" class="btn-primary">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=__ASSETVER__"></script>
+</body>
+</html>

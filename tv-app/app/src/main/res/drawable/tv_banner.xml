@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon / Android-TV home banner (320x180). Simple camera-lens glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#0B0E13"
+        android:pathData="M0,0 h320 v180 h-320 z" />
+    <path
+        android:fillColor="#4A9EFF"
+        android:pathData="M160,90 m-46,0 a46,46 0 1,0 92,0 a46,46 0 1,0 -92,0 z" />
+    <path
+        android:fillColor="#0B0E13"
+        android:pathData="M160,90 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M150,78 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 z" />
+</vector>

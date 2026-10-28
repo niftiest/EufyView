@@ -1,0 +1,20 @@
+# Keep the Windows-built runtime and host state out of the Linux image -
+# these are reinstalled/created inside the container.
+node_modules/
+node/
+ffmpeg/
+data/
+_reference/
+*.log
+persistent.json
+auth.json
+
+# Windows installer + native TV app aren't part of the server image.
+installer/
+tv-app/
+
+# VCS / editor noise.
+.git/
+.gitignore
+*.md
+!README.md

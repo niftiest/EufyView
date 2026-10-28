@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A camera card: 16:9 snapshot with a focus border + activity dot, name below.
+     The root is the focusable/clickable element the D-pad lands on; padding gives
+     the focus scale-up room so neighbours aren't clipped. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:focusable="true"
+    android:focusableInTouchMode="false"
+    android:clickable="true"
+    android:background="@android:color/transparent">
+
+    <FrameLayout
+        android:layout_width="284dp"
+        android:layout_height="160dp"
+        android:foreground="@drawable/card_focus">
+
+        <ImageView
+            android:id="@+id/card_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/card_placeholder"
+            android:contentDescription="@null" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/card_title"
+        android:layout_width="284dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="#C7D4E6"
+        android:textSize="15sp"
+        android:singleLine="true"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:focusable="false" />
+</LinearLayout>

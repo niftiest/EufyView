@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0B0E13">
+
+    <!-- Hero / spotlight: big image for the focused camera, with top bar and
+         title overlaid. Weighted so it takes a little over half the screen,
+         leaving the first card row visible with the next peeking below. -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1.15">
+
+        <ImageView
+            android:id="@+id/hero_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#11161F"
+            android:scaleType="centerCrop"
+            android:contentDescription="@null" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/hero_scrim" />
+
+        <!-- Top bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/topbar_scrim"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingTop="22dp"
+            android:paddingBottom="28dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="#FFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/dash_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="18dp"
+                android:textColor="#8DA0B8"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/overlay_btn"
+                style="@android:style/Widget.DeviceDefault.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:paddingStart="22dp"
+                android:paddingEnd="22dp"
+                android:background="@drawable/topbar_btn"
+                android:textColor="@color/topbar_btn_text"
+                android:visibility="gone"
+                android:text="Grant overlay permission" />
+
+            <Button
+                android:id="@+id/settings_btn"
+                style="@android:style/Widget.DeviceDefault.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:background="@drawable/topbar_btn"
+                android:textColor="@color/topbar_btn_text"
+                android:text="⚙  Settings" />
+        </LinearLayout>
+
+        <!-- Hero title block (bottom-left) -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:orientation="vertical"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingBottom="22dp">
+
+            <TextView
+                android:id="@+id/hero_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="40sp"
+                android:textStyle="bold"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="8" />
+
+            <TextView
+                android:id="@+id/hero_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="#C7D4E6"
+                android:textSize="18sp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="8" />
+
+            <TextView
+                android:id="@+id/hero_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="#7E8CA0"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/dash_empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Connecting…"
+            android:textColor="#9FB0C7"
+            android:textSize="20sp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- Card rows -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rows_recycler"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1.0"
+        android:paddingTop="8dp"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants" />
+</LinearLayout>

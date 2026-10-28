@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Top-down darkening behind the top bar so the app name + buttons read over a
+     bright hero image. angle=270 → origin at top. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#B3000000"
+        android:endColor="#00000000"
+        android:type="linear" />
+</shape>
