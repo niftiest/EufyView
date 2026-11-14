@@ -1708,6 +1708,23 @@ function registerWebSocketHandlers() {
             if (hid && scopedHouses[hid]) deviceHouseNames[sn] = scopedHouses[hid].house_name;
         }
 
+        // Which station each camera is on, and whether that station is currently
+        // reachable. Lets the grid flag a camera as "Hub offline" (distinct from a
+        // camera that's merely off) the moment it loads, and the station connect/
+        // close WS events keep it live. Scoped to the stations this user can see.
+        const deviceStationMap = {};
+        for (const d of devices) {
+            const sn = d.getSerial();
+            if (!deviceSerials.includes(sn)) continue;
+            try { deviceStationMap[sn] = d.getStationSerial(); } catch (e) {}
+        }
+        const stationConnected = {};
+        for (const s of stations) {
+            const sn = s.getSerial();
+            if (!stationSerials.includes(sn)) continue;
+            try { stationConnected[sn] = s.isConnected(); } catch (e) { stationConnected[sn] = false; }
+        }
+
         return {
             type: 'result',
             messageId: 'start_listening',
@@ -1722,7 +1739,9 @@ function registerWebSocketHandlers() {
                     houses: scopedHouses,
                     deviceHouseMap: scopedHouseMap,
                     deviceNames,
-                    deviceHouseNames
+                    deviceHouseNames,
+                    deviceStationMap,
+                    stationConnected
                 }
             }
         };

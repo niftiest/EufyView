@@ -24,6 +24,8 @@ let devices = {};           // serialNumber -> { name, model, picture, ... }
 let stations = {};          // stationSerial -> { name }
 let houses = {};            // houseId -> { house_name }
 let deviceHouseMap = {};    // deviceSerial -> houseId
+let deviceStationMap = {};  // deviceSerial -> stationSerial (its HomeBase)
+let stationOnline = {};     // stationSerial -> bool (hub reachable); drives "Hub offline"
 let currentDeviceSN = null; // device being viewed live
 let stationSN = null;
 
@@ -736,6 +738,8 @@ function handleResult(msg) {
                 // Store house and station-to-house mappings
                 if (state.houses) houses = state.houses;
                 if (state.deviceHouseMap) deviceHouseMap = state.deviceHouseMap;
+                if (state.deviceStationMap) deviceStationMap = state.deviceStationMap;
+                if (state.stationConnected) stationOnline = state.stationConnected;
 
                 // Request properties for each station
                 (state.stations || []).forEach(sn => {
@@ -953,6 +957,22 @@ function handleEvent(msg) {
                 } else if (evt.name === 'motionTracking') {
                     dev.motionTracking = !!evt.value;
                     if (currentDeviceSN === evt.serialNumber) updateLiveControls();
+                }
+            }
+            break;
+
+        // A HomeBase came up or went down. Track it so every camera on that hub
+        // flips between "Hub offline" and normal without waiting for a reload.
+        case 'connect':
+        case 'close':
+        case 'connection error':
+            if (evt.source === 'station') {
+                const online = evt.event === 'connect';
+                if (stationOnline[evt.serialNumber] !== online) {
+                    stationOnline[evt.serialNumber] = online;
+                    renderCameraGrid();
+                    const modeOverlay = document.getElementById('mode-overlay');
+                    if (modeOverlay && !modeOverlay.classList.contains('hidden')) updateModeChooserAvailability();
                 }
             }
             break;
@@ -1263,6 +1283,12 @@ function updateSnapshotAllButton(completed, total) {
 // no state at all - in that case the station's connection is the real signal.
 function deviceStateLabel(dev) {
     if (!dev) return null;
+    // Hub down: a camera on an unreachable HomeBase can't stream or serve recordings,
+    // and the hub (not the camera) is the real reason - say so distinctly. Only for a
+    // SEPARATE hub (station serial differs from the camera's own serial); a standalone
+    // camera that is its own station falls through to the normal offline labels below.
+    const st = deviceStationMap[dev.serialNumber];
+    if (st && st !== dev.serialNumber && stationOnline[st] === false) return 'Hub offline';
     // A reachable camera always reports Eufy's DeviceState === 1 (Online). The hub
     // reports state=1 for every camera it can reach and NOTHING for one it can't -
     // so a camera that's off while its hub is up simply has no state. (Battery/wifi
