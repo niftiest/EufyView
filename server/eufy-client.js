@@ -1599,6 +1599,28 @@ async function captureSnapshotForDevice(serialNumber) {
  * Registers all WebSocket API command handlers for client communication
  * Prevents duplicate registration
  */
+
+// Camera scoping for station-level WS commands (station.*). The ws-api dispatcher
+// only scope-checks device.* commands, and a station command targets a station
+// serial (not a camera serial), so isCameraAllowed can't be applied directly.
+// Allow only when the connected user can access at least one camera on that
+// station (or the serial is itself an allowed standalone device). Mirrors
+// isCameraAllowed's checks and fails CLOSED - a null/unresolved scope denies,
+// matching the device.* gate. (auth disabled => scope.cameras === 'all'.)
+function isStationAllowed(scope, stationSerial) {
+    if (!scope || !scope.allowed) return false;
+    if (scope.cameras === 'all') return true;
+    if (Array.isArray(scope.cameras) && scope.cameras.includes(stationSerial)) return true;
+    for (const d of Array.from(devices)) {
+        try {
+            if (d.getStationSerial() === stationSerial && auth.isCameraAllowed(scope, d.getSerial())) {
+                return true;
+            }
+        } catch (e) { /* skip a device that can't report its station */ }
+    }
+    return false;
+}
+
 function registerWebSocketHandlers() {
     // Prevent duplicate handler registration
     if (wsEvnentHandlersRegistered) {
@@ -1680,6 +1702,9 @@ function registerWebSocketHandlers() {
      */
     wsApi.registerMessageHandler('station.get_properties', async (message, ws) => {
         if (!isConnected()) { ws.close(); }
+        if (!isStationAllowed(ws && ws._scope, message.serialNumber)) {
+            return { type: 'result', success: false, messageId: 'station.get_properties', error: 'forbidden', message: 'Not authorized for this station' };
+        }
 
         const station = await eufyClient.getStation(message.serialNumber);
         const properties = station.getProperties();
@@ -1700,6 +1725,9 @@ function registerWebSocketHandlers() {
      */
     wsApi.registerMessageHandler('station.download_image', async (message, ws) => {
         if (!isConnected()) { ws.close(); }
+        if (!isStationAllowed(ws && ws._scope, message.serialNumber)) {
+            return { type: 'result', success: false, messageId: 'station.download_image', error: 'forbidden', message: 'Not authorized for this station' };
+        }
 
         const station = await eufyClient.getStation(message.serialNumber);
         station.downloadImage(message.file);
@@ -1719,6 +1747,9 @@ function registerWebSocketHandlers() {
      */
     wsApi.registerMessageHandler('station.database_query_latest_info', async (message, ws) => {
         if (!isConnected()) { ws.close(); }
+        if (!isStationAllowed(ws && ws._scope, message.serialNumber)) {
+            return { type: 'result', success: false, messageId: 'station.database_query_latest_info', error: 'forbidden', message: 'Not authorized for this station' };
+        }
 
         const station = await eufyClient.getStation(message.serialNumber);
         station.databaseQueryLatestInfo();
