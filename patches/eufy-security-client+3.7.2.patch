@@ -11,7 +11,7 @@ index 1dda71e..39236ea 100644
                      commandType: types_2.CommandType.CMD_DOWNLOAD_VIDEO,
                      strValue: path,
 diff --git a/node_modules/eufy-security-client/build/p2p/session.js b/node_modules/eufy-security-client/build/p2p/session.js
-index 63356e1..4a428ac 100644
+index 63356e1..ee116ab 100644
 --- a/node_modules/eufy-security-client/build/p2p/session.js
 +++ b/node_modules/eufy-security-client/build/p2p/session.js
 @@ -18,6 +18,7 @@ const ble_1 = require("./ble");
@@ -40,7 +40,7 @@ index 63356e1..4a428ac 100644
                                  this.waitForStreamData(types_1.P2PDataType.BINARY, true);
                              }
                              else if (msg_state.commandType === types_1.CommandType.CMD_START_TALKBACK ||
-@@ -1830,41 +1842,67 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+@@ -1830,41 +1842,74 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
                      videoMetaData.videoHeight = message.data.subarray(12, 14).readUInt16LE();
                      videoMetaData.videoTimestamp = message.data.subarray(14, 20).readUIntLE(0, 6);
                      let payloadStart = 22;
@@ -49,7 +49,14 @@ index 63356e1..4a428ac 100644
 -                        const key = message.data.subarray(22, 150);
 -                        const rsaKey = this.currentMessageState[message.dataType].rsaKey;
 -                        if (rsaKey) {
-+                        const __eccKey = this.downloadEccPrivateKey;
++                        // Only the recording-download stream (BINARY) is wrapped in our HB2
++                        // ECIES / Chime envelopes. Livestream keyframes (VIDEO) carry the stock
++                        // RSA-wrapped AES key, so they must never go through the download
++                        // decoders: a stale downloadEccPrivateKey / downloadChimeRand left over
++                        // from an earlier playback would otherwise hijack the live keyframe and
++                        // kill live view until restart (see memory hb2-live-view-ecies-leak).
++                        const __isDownload = message.dataType === types_1.P2PDataType.BINARY;
++                        const __eccKey = __isDownload ? this.downloadEccPrivateKey : null;
 +                        if (__eccKey && eufyDlCrypto) {
                              try {
 -                                videoMetaData.aesKey = rsaKey.decrypt(key).toString("hex");
@@ -77,7 +84,7 @@ index 63356e1..4a428ac 100644
 +                                return;
 +                            }
 +                        }
-+                        else if (this.downloadChimeRand && eufyDlCrypto && eufyDlCrypto.decodeChimeKeyframe) {
++                        else if (__isDownload && this.downloadChimeRand && eufyDlCrypto && eufyDlCrypto.decodeChimeKeyframe) {
 +                            // [Chime] whole keyframe body is AES-128-ECB under a key
 +                            // derived from station serial + p2p_did + per-clip rand.
 +                            try {
@@ -132,7 +139,7 @@ index 63356e1..4a428ac 100644
                          const encrypted_data = message.data.subarray(payloadStart, payloadStart + 128);
                          const unencrypted_data = message.data.subarray(payloadStart + 128, payloadStart + videoMetaData.videoDataLength);
                          video_data = Buffer.concat([(0, utils_1.decryptAESData)(videoMetaData.aesKey, encrypted_data), unencrypted_data]);
-@@ -2032,7 +2070,16 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
+@@ -2032,7 +2077,16 @@ class P2PClientProtocol extends tiny_typed_emitter_1.TypedEmitter {
                      audioMetaData.audioType = message.data.subarray(5, 6).readUInt8();
                      audioMetaData.audioSeqNo = message.data.subarray(6, 8).readUInt16LE();
                      audioMetaData.audioTimestamp = message.data.subarray(8, 14).readUIntLE(0, 6);
