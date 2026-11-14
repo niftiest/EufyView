@@ -461,6 +461,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         item.addEventListener('click', () => { if (item.dataset.pane) openSettingsPane(item.dataset.pane); });
     });
     document.getElementById('admin-users').addEventListener('click', onAdminUsersClick);
+    const adminDevicesEl = document.getElementById('admin-devices');
+    if (adminDevicesEl) adminDevicesEl.addEventListener('click', onAdminDevicesClick);
     document.getElementById('admin-add-user').addEventListener('click', () => openAccessPage(null));
     document.getElementById('aa-save').addEventListener('click', saveAdminAccount);
     document.getElementById('access-cameras').addEventListener('click', onAccessCamClick);
@@ -3378,6 +3380,13 @@ async function loadAdminData() {
         const list = document.getElementById('admin-users');
         if (list) list.innerHTML = '<p class="settings-hint">Could not load users.</p>';
     }
+    try {
+        const d = await fetchJSON('/admin/devices');
+        renderAdminDevices((d && d.devices) || []);
+    } catch (e) {
+        const box = document.getElementById('admin-devices');
+        if (box) box.innerHTML = '<p class="settings-hint">Could not load devices.</p>';
+    }
 }
 
 function camSummary(cameras) {
@@ -3421,6 +3430,40 @@ function renderAdminUsers(access) {
             '<button class="admin-act danger" data-act="remove">Remove</button>' +
             '</div></div>';
     }).join('');
+}
+
+function renderAdminDevices(devices) {
+    const box = document.getElementById('admin-devices');
+    if (!box) return;
+    if (!devices.length) { box.innerHTML = '<p class="settings-hint">No paired devices.</p>'; return; }
+    box.innerHTML = devices.map(d =>
+        '<div class="admin-user" data-id="' + escapeText(d.id) + '">' +
+        '<div class="admin-user-top"><span class="admin-user-email">' + escapeText(d.label || 'Paired device') + '</span></div>' +
+        '<div class="admin-user-meta">' + escapeText(d.email || '') + ' · paired ' + timeAgo(d.pairedAt) + ' · last seen ' + timeAgo(d.lastSeenAt) +
+        (d.lastIp ? ' · ' + escapeText(d.lastIp) : '') + '</div>' +
+        '<div class="admin-user-actions">' +
+        '<button class="admin-act danger" data-act="revoke">Revoke</button>' +
+        '</div></div>'
+    ).join('');
+}
+
+// Revoke button inside the paired-devices list (event-delegated).
+function onAdminDevicesClick(e) {
+    const btn = e.target.closest('.admin-act');
+    if (!btn || btn.dataset.act !== 'revoke') return;
+    const row = e.target.closest('.admin-user');
+    const id = row && row.dataset.id;
+    if (!id) return;
+    const label = row.querySelector('.admin-user-email');
+    const name = label ? label.textContent : 'this device';
+    if (confirm('Revoke ' + name + '? It loses access immediately and must be paired again to return.')) adminRevokeDevice(id);
+}
+
+async function adminRevokeDevice(id) {
+    try {
+        const r = await fetchJSON('/admin/devices/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        if (r.success) loadAdminData();
+    } catch (e) {}
 }
 
 function renderAdminLockouts(access) {

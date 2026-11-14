@@ -217,9 +217,86 @@ function makeToken(email, secret) {
 
 // Long-lived token for a headless appliance (Fire TV / Android TV alert app)
 // that can't hold a browser cookie. Same signed format; inherits email's scope.
-function makeDeviceToken(email, secret) {
-    const payload = Buffer.from(JSON.stringify({ email, kind: 'device', exp: Date.now() + DEVICE_MAX_AGE_MS })).toString('base64url');
+// Carries a random `did` so the device can be revoked individually (see the
+// device registry below). A token minted with no did is a legacy token.
+function makeDeviceToken(email, secret, did) {
+    const body = { email, kind: 'device', exp: Date.now() + DEVICE_MAX_AGE_MS };
+    if (did) body.did = did;
+    const payload = Buffer.from(JSON.stringify(body)).toString('base64url');
     return `${payload}.${sign(payload, secret)}`;
+}
+
+// ---- device registry (per-device revocation) ----
+// Each paired appliance/TV is recorded in cfg.devices so an admin can revoke one
+// lost/compromised device without rotating the global secret (which would log
+// out every browser and TV at once). A device token whose `did` is no longer in
+// the registry is rejected at verify time. Tokens with no `did` predate the
+// registry: they stay valid (so an upgrade doesn't log out a paired TV) but
+// aren't individually revocable - re-pair the device to make it manageable.
+function registerDevice(email, label, meta) {
+    const cfg = loadConfig();
+    if (!cfg) return null;
+    if (!Array.isArray(cfg.devices)) cfg.devices = [];
+    const did = crypto.randomBytes(16).toString('hex');
+    cfg.devices.push({
+        id: did,
+        email: lc(email),
+        label: (label && String(label).slice(0, 80)) || 'Paired device',
+        pairedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        lastIp: (meta && meta.ip) || null,
+    });
+    saveConfig(cfg);
+    return did;
+}
+
+function findDevice(cfg, did) {
+    if (!cfg || !Array.isArray(cfg.devices) || !did) return null;
+    return cfg.devices.find((d) => d.id === did) || null;
+}
+
+const DEVICE_SEEN_PERSIST_MS = 10 * 60 * 1000;   // throttle lastSeen disk writes
+function touchDevice(did, meta) {
+    const cfg = loadConfig();
+    const d = findDevice(cfg, did);
+    if (!d) return;
+    const now = Date.now();
+    if (now - (d.lastSeenAt || 0) < DEVICE_SEEN_PERSIST_MS) return;   // throttle
+    d.lastSeenAt = now;
+    if (meta && meta.ip) d.lastIp = meta.ip;
+    saveConfig(cfg);
+}
+
+// Verify a bearer/device token for a request AND enforce the device registry.
+// Returns the token payload when valid, else null. A device token whose `did`
+// has been revoked (absent from cfg.devices) is denied. Session cookies (no
+// kind) and legacy device tokens (no did) pass without a registry check.
+function verifyRequestToken(token, meta) {
+    const cfg = loadConfig();
+    if (!cfg) return null;
+    const data = verifyToken(token, cfg.sessionSecret);
+    if (!data) return null;
+    if (data.kind === 'device' && data.did) {
+        if (!findDevice(cfg, data.did)) return null;     // revoked / unknown device
+        try { touchDevice(data.did, meta); } catch (e) {}
+    }
+    return data;
+}
+
+function listDevices() {
+    const cfg = loadConfig();
+    const arr = (cfg && Array.isArray(cfg.devices)) ? cfg.devices : [];
+    return arr.map((d) => ({ id: d.id, email: d.email, label: d.label, pairedAt: d.pairedAt, lastSeenAt: d.lastSeenAt, lastIp: d.lastIp }));
+}
+
+function revokeDevice(id) {
+    const cfg = loadConfig();
+    if (!cfg || !Array.isArray(cfg.devices)) return { error: 'not_found' };
+    const before = cfg.devices.length;
+    cfg.devices = cfg.devices.filter((d) => d.id !== id);
+    if (cfg.devices.length === before) return { error: 'not_found' };
+    saveConfig(cfg);
+    return { ok: true };
 }
 
 // Pull a bearer token off a request: `Authorization: Bearer <t>` or `?token=<t>`
@@ -316,7 +393,7 @@ function scopeForRequest(req) {
     const email = getSessionEmail(req.headers && req.headers.cookie);
     if (email) return getScopeForEmail(email);
     const t = tokenFromReq(req);
-    const data = t ? verifyToken(t, cfg.sessionSecret) : null;
+    const data = t ? verifyRequestToken(t, { ip: req.socket && req.socket.remoteAddress }) : null;
     return data ? getScopeForEmail(data.email) : { email: null, allowed: false, admin: false, cameras: [], authEnabled: true };
 }
 
@@ -333,7 +410,7 @@ function isAuthedRequest(req) {
     if (!cfg.sessionSecret) return false;
     if (isAuthedCookieHeader(req.headers && req.headers.cookie)) return true;
     const t = tokenFromReq(req);
-    return !!(t && verifyToken(t, cfg.sessionSecret));
+    return !!(t && verifyRequestToken(t, { ip: req.socket && req.socket.remoteAddress }));
 }
 
 function isEmailAllowed(email) { return getScopeForEmail(email).allowed; }
@@ -563,7 +640,8 @@ function mintDeviceTokenForAdmin() {
     const cfg = loadConfig();
     if (!cfg || !cfg.sessionSecret) return 'local';
     const email = (cfg.admin && cfg.admin.email) || 'admin';
-    return makeDeviceToken(email, cfg.sessionSecret);
+    const did = registerDevice(email, 'Auto-paired device', {});
+    return makeDeviceToken(email, cfg.sessionSecret, did);
 }
 
 // ---- TV pairing codes ----
@@ -590,7 +668,7 @@ function makePairCode(email) {
     return { code, expiresInSec: Math.floor(PAIR_CODE_TTL_MS / 1000) };
 }
 
-function redeemPairCode(rawCode) {
+function redeemPairCode(rawCode, meta) {
     prunePairCodes();
     const now = Date.now();
     pairRedeemFails = pairRedeemFails.filter((t) => now - t < PAIR_REDEEM_WINDOW_MS);
@@ -600,7 +678,8 @@ function redeemPairCode(rawCode) {
     if (!entry) { pairRedeemFails.push(now); return { error: 'invalid' }; }
     pairCodes.delete(code);
     const cfg = loadConfig();
-    return { token: makeDeviceToken(entry.email, cfg.sessionSecret), email: entry.email };
+    const did = registerDevice(entry.email, (meta && meta.label) || 'TV / appliance', meta);
+    return { token: makeDeviceToken(entry.email, cfg.sessionSecret, did), email: entry.email };
 }
 
 // ---- login page ----
@@ -807,7 +886,8 @@ function installAuth(app) {
 
     // Redeem a pairing code for a device token (the code IS the credential).
     app.post('/auth/pair-code/redeem', (req, res) => {
-        const r = redeemPairCode(req.body && req.body.code);
+        const label = (req.body && req.body.label) || req.headers['user-agent'] || null;
+        const r = redeemPairCode(req.body && req.body.code, { label, ip: req.socket.remoteAddress });
         if (r.error === 'rate_limited') return res.status(429).json({ error: 'too many attempts; wait a minute' });
         if (r.error) return res.status(400).json({ error: 'invalid or expired code' });
         res.json({ token: r.token, email: r.email, baseUrl: cfg.baseUrl });
@@ -828,7 +908,7 @@ function installAuth(app) {
         if (req.method === 'GET' && /^\/push\/thumb\/[0-9a-f]{32}\.jpg$/.test(req.path)) return next();
         if (verifyToken(parseCookies(req.headers.cookie)[COOKIE], cfg.sessionSecret)) return next();
         const bearer = tokenFromReq(req);
-        if (bearer && verifyToken(bearer, cfg.sessionSecret)) return next();
+        if (bearer && verifyRequestToken(bearer, { ip: req.socket && req.socket.remoteAddress })) return next();
         const accept = req.headers.accept || '';
         if (req.method === 'GET' && accept.includes('text/html')) return res.redirect('/auth/login');
         return res.status(401).json({ error: 'unauthorized' });
@@ -839,7 +919,8 @@ function installAuth(app) {
     app.get('/auth/device-token', (req, res) => {
         const email = getSessionEmail(req.headers.cookie);
         if (!email) return res.status(401).json({ error: 'sign in in a browser first' });
-        res.json({ token: makeDeviceToken(email, cfg.sessionSecret), email, baseUrl: cfg.baseUrl });
+        const did = registerDevice(email, (req.query && req.query.label) || 'Browser device', { ip: req.socket.remoteAddress });
+        res.json({ token: makeDeviceToken(email, cfg.sessionSecret, did), email, baseUrl: cfg.baseUrl });
     });
 
     app.post('/auth/pair-code/new', (req, res) => {
@@ -868,6 +949,8 @@ module.exports = {
     tokenFromReq,
     getPublicBaseUrl,
     mintDeviceTokenForAdmin,
+    listDevices,
+    revokeDevice,
     // passwords / admin / users
     hashPassword,
     verifyPassword,

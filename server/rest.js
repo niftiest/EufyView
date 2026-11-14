@@ -774,6 +774,26 @@ function initRestServer() {
     });
 
     /**
+     * GET /admin/devices - list paired appliances/TVs (device tokens) so an
+     * admin can see and revoke them. Admin only.
+     */
+    app.get('/admin/devices', (req, res) => {
+        if (!requireAdmin(req, res)) return;
+        res.json({ success: true, devices: auth.listDevices() });
+    });
+
+    /**
+     * POST /admin/devices/revoke - revoke one paired device by id. Its token is
+     * rejected on its next request. Body: { id }. Admin only.
+     */
+    app.post('/admin/devices/revoke', (req, res) => {
+        if (!requireAdmin(req, res)) return;
+        const r = auth.revokeDevice(req.body && req.body.id);
+        if (r.error) return res.status(404).json({ success: false, error: r.error });
+        res.json({ success: true });
+    });
+
+    /**
      * POST /admin/account - change the administrator's email and/or password.
      * Body: { currentPassword, newEmail?, newPassword? }
      */
