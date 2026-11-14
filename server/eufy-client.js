@@ -84,6 +84,29 @@ const lastNotifiedAt = {};            // "serial:type" -> last notify time (ms)
 const lastP2PAt = {};                 // serial -> last P2P detection (ms); suppresses poll dupes
 const DETECTION_DEDUP_MS = 90000;     // collapse repeats / P2P-instant + poll-later into one
 
+// Dead-hub log throttling. An unreachable HomeBase keeps the library reconnecting
+// on its own (~every 45s), which otherwise logs the same p2p failure forever - in
+// practice ~85% of the log, which also evicts real history through rotation. We do
+// NOT stop the library reconnecting (we want it back if the hub returns); we just
+// stop logging every identical failure.
+const LIB_LOG_THROTTLE_MS = 5 * 60000;  // resurface a repeated lib warn/error at most this often
+const CONN_ERR_LOG_MS = 5 * 60000;      // resurface a station's connection error at most this often
+const libLogSeen = new Map();           // normalized lib message -> { last: ms, count: suppressed }
+const lastConnErrLogAt = new Map();     // station serial -> last time we warned about its connection
+
+// Collapse repeated identical library warn/error lines. Logs the first, suppresses
+// identical repeats within the window, and resurfaces a "(repeated Nx)" summary.
+function libLogThrottled(level, msg) {
+    const now = Date.now();
+    const rec = libLogSeen.get(msg);
+    if (rec && now - rec.last < LIB_LOG_THROTTLE_MS) { rec.count++; return; }
+    const suffix = (rec && rec.count)
+        ? ` (repeated ${rec.count}x in the last ${Math.max(1, Math.round((now - rec.last) / 60000))}m)` : '';
+    libLogSeen.set(msg, { last: now, count: 0 });
+    if (libLogSeen.size > 500) { libLogSeen.delete(libLogSeen.keys().next().value); } // bound memory
+    utils.log(msg + suffix, level);
+}
+
 // HomeBase P2P event_type → { event, label }. Codes match the library's
 // HB3PairedDevicePushEvent (3101-3112) and the official app's event list
 // ("Motion Detected", "Ring", "Stranger"). `event` names are the ones the PWA
@@ -378,8 +401,8 @@ async function connect(eufyConfig) {
                 trace: (...a) => utils.log('[lib] ' + fmt(a), 'trace'),
                 debug: (...a) => { handleP2PDetection(a); utils.log('[lib] ' + fmt(a), 'debug'); },
                 info:  (...a) => utils.log('[lib] ' + fmt(a), 'debug'),
-                warn:  (...a) => utils.log('[lib] ' + fmt(a), 'warn'),
-                error: (...a) => utils.log('[lib] ' + fmt(a), 'error'),
+                warn:  (...a) => libLogThrottled('warn', '[lib] ' + fmt(a)),
+                error: (...a) => libLogThrottled('error', '[lib] ' + fmt(a)),
             };
             // The library gates its output behind config.logging.level (default
             // silent), so set a verbose level to actually see the push flow.
@@ -1159,7 +1182,16 @@ function addStation(station) {
         });
     });
     station.on("connection error", () => {
-        utils.log(`❌ Station connection error: ${station.getName()} (${station.getSerial()})`, 'warn');
+        // Throttle per station: a hub down for days must not warn every ~45s. Warn
+        // on the first error and at most once per window; keep the rest at debug.
+        const sn = station.getSerial();
+        const now = Date.now();
+        if (now - (lastConnErrLogAt.get(sn) || 0) >= CONN_ERR_LOG_MS) {
+            lastConnErrLogAt.set(sn, now);
+            utils.log(`❌ Station connection error: ${station.getName()} (${sn})`, 'warn');
+        } else {
+            utils.log(`Station connection error: ${station.getName()} (${sn})`, 'debug');
+        }
         wsApi.wsBroadcast({
             type: 'event',
             event: {

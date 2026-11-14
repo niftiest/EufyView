@@ -402,7 +402,11 @@ function categoryFor(label) {
 // skip after a couple of consecutive misses (a single slow/relayed answer
 // shouldn't hide a remote hub's recordings), and the cooldown is short enough
 // that a manual refresh soon after retries.
-const SILENT_SKIP_MS = 3 * 60000;
+// Exponential dead-hub cooldown: a hub that keeps failing recording queries is
+// skipped for progressively longer (3m -> 10m -> 30m cap) instead of a flat 3m,
+// so a permanently-unreachable hub is retried far less often. Reset on success
+// (failCount.delete below), so a hub that recovers returns to the short cooldown.
+const SILENT_SKIP_STEPS_MS = [3 * 60000, 10 * 60000, 30 * 60000];
 const FAIL_BEFORE_SKIP = 2;
 const failCount = new Map();               // stationSN -> consecutive timeout count
 const silentUntil = new Map();             // stationSN -> epoch ms (skip until)
@@ -411,8 +415,9 @@ function noteStationTimeout(stSN, label) {
     const n = (failCount.get(stSN) || 0) + 1;
     failCount.set(stSN, n);
     if (n >= FAIL_BEFORE_SKIP) {
-        silentUntil.set(stSN, Date.now() + SILENT_SKIP_MS);
-        utils.log(`🎞️ ${label} not responding (${n} tries) - skipping its recordings for ${Math.round(SILENT_SKIP_MS / 60000)}m`, 'warn');
+        const step = SILENT_SKIP_STEPS_MS[Math.min(n - FAIL_BEFORE_SKIP, SILENT_SKIP_STEPS_MS.length - 1)];
+        silentUntil.set(stSN, Date.now() + step);
+        utils.log(`🎞️ ${label} not responding (${n} tries) - skipping its recordings for ${Math.round(step / 60000)}m`, 'warn');
     } else {
         utils.log(`🎞️ ${label} did not answer recordings query in time (try ${n}/${FAIL_BEFORE_SKIP})`, 'warn');
     }
